@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>M0rty: Unredacted</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --card: #111118;
+      --border: #1e1e2e;
+      --crimson: #cc1a1a;
+      --crimson-glow: rgba(204,26,26,0.18);
+      --cyan: #00e5ff;
+      --cyan-glow: rgba(0,229,255,0.12);
+      --text: #e8e8f0;
+      --muted: #666680;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 40px;
+    }
+
+    .logo-wrap { margin-bottom: 6px; }
+    .logo-svg { width: 72px; height: 72px; opacity: 0.92; }
+
+    .brand-name {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(2rem, 8vw, 2.8rem);
+      letter-spacing: 0.04em;
+      line-height: 1;
+      margin-bottom: 10px;
+      color: var(--text);
+    }
+    .brand-name .zero { color: var(--crimson); text-shadow: 0 0 14px var(--crimson); }
+
+    .tagline { font-size: 0.95rem; color: var(--muted); font-style: italic; margin-bottom: 8px; }
+    .pillars { font-size: 0.75rem; color: #44445a; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 36px; }
+
+    .btn-group { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 380px; margin-bottom: 32px; }
+
+    .btn {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-radius: 8px; text-decoration: none;
+      font-size: 0.95rem; font-weight: 600;
+      transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+      cursor: pointer;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn .arrow { opacity: 0.5; font-size: 1rem; }
+
+    .btn-yt { background: var(--card); border: 1px solid var(--cyan); color: var(--cyan); box-shadow: 0 0 0 0 var(--cyan-glow); }
+    .btn-yt:hover { background: rgba(0,229,255,0.06); box-shadow: 0 4px 20px var(--cyan-glow); }
+
+    .social-row { display: flex; gap: 10px; width: 100%; max-width: 380px; margin-bottom: 12px; }
+    .btn-social {
+      flex: 1; justify-content: center; background: var(--card); border: 1px solid var(--border);
+      color: var(--muted); font-size: 0.82rem; font-weight: 500; padding: 11px 10px; gap: 6px;
+    }
+    .btn-social:hover { border-color: #333350; color: var(--text); background: #15151f; }
+    .btn-social .arrow { display: none; }
+
+    .btn-reading { background: #130a0a; border: 1px solid var(--crimson); color: #ff6b6b; box-shadow: 0 0 0 0 var(--crimson-glow); }
+    .btn-reading:hover { background: rgba(204,26,26,0.08); box-shadow: 0 4px 20px var(--crimson-glow); }
+
+    .divider { font-size: 0.7rem; letter-spacing: 0.2em; color: #2a2a3a; text-transform: uppercase; margin: 4px 0 12px; width: 100%; max-width: 380px; text-align: center; }
+
+    footer { margin-top: auto; padding-top: 32px; font-size: 0.72rem; color: #333346; text-align: center; line-height: 1.8; }
+    footer a { color: #444460; text-decoration: none; }
+    footer a:hover { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+  <div class="logo-wrap">
+    <svg class="logo-svg" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="14" y="8" width="38" height="48" rx="3" fill="#111118" stroke="#cc1a1a" stroke-width="1.5"/>
+      <rect x="20" y="18" width="26" height="5" rx="1.5" fill="#cc1a1a" opacity="0.9"/>
+      <rect x="20" y="28" width="18" height="5" rx="1.5" fill="#cc1a1a" opacity="0.6"/>
+      <rect x="20" y="38" width="22" height="5" rx="1.5" fill="#cc1a1a" opacity="0.4"/>
+      <ellipse cx="36" cy="58" rx="12" ry="6" fill="#0a0a0f" stroke="#00e5ff" stroke-width="1.2"/>
+      <circle cx="36" cy="58" r="3.5" fill="#00e5ff" opacity="0.85"/>
+      <circle cx="37.2" cy="57" r="1.2" fill="#0a0a0f"/>
+    </svg>
+  </div>
+
+  <h1 class="brand-name">M<span class="zero">0</span>RTY: UNREDACTED</h1>
+  <p class="tagline">They redact it. I find it.</p>
+  <p class="pillars">UAPs · Cover-ups · Ancient Mysteries · Prison Planet</p>
+
+  <div class="btn-group">
+    <a class="btn btn-yt" href="https://www.youtube.com/@m0rtyunredacted" target="_blank" rel="noopener">
+      <span>▶ Watch on YouTube</span>
+      <span class="arrow">›</span>
+    </a>
+  </div>
+
+  <div class="social-row">
+    <a class="btn btn-social" href="https://x.com/m0rtyunredacted" target="_blank" rel="noopener">
+      𝕏 &nbsp;@m0rtyunredacted
+    </a>
+    <a class="btn btn-social" href="https://www.tiktok.com/@m0rtyunredacted" target="_blank" rel="noopener">
+      ▷ TikTok
+    </a>
+  </div>
+
+  <p class="divider">— Dive Deeper —</p>
+
+  <div class="btn-group">
+    <a class="btn btn-reading" href="https://x.com/m0rtyunredacted/status/2026733304246845704?s=20" target="_blank" rel="noopener">
+      <span>📚 Books They Don't Want You Reading</span>
+      <span class="arrow">›</span>
+    </a>
+  </div>
+
+  <footer>
+    <p>© 2026 M0rty Unredacted</p>
+    <p style="margin-top:6px;">Contains affiliate links. Qualifying purchases may generate a commission.</p>
+  </footer>
+
+</body>
+</html>
