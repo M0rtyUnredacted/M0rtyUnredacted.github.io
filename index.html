@@ -5,20 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>M0rty: Unredacted</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;500;600;700&display=swap');
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
       --bg: #0a0a0f;
-      --card: #111118;
+      --card: #0f0f18;
+      --card-hover: #141420;
       --border: #1e1e2e;
+      --border-hover: #2a2a3e;
       --crimson: #cc1a1a;
       --crimson-glow: rgba(204,26,26,0.18);
+      --crimson-dim: rgba(204,26,26,0.12);
       --cyan: #00e5ff;
-      --cyan-glow: rgba(0,229,255,0.12);
+      --cyan-glow: rgba(0,229,255,0.15);
+      --cyan-dim: rgba(0,229,255,0.08);
       --text: #e8e8f0;
       --muted: #666680;
+      --subtle: #9999b0;
     }
 
     body {
@@ -29,55 +34,67 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 48px 20px 40px;
+      padding: 52px 20px 44px;
     }
 
-    .logo-wrap { margin-bottom: 6px; }
-    .logo-svg { width: 72px; height: 72px; opacity: 0.92; }
+    .logo-wrap { margin-bottom: 8px; }
+    .logo-svg { width: 68px; height: 68px; opacity: 0.92; }
 
     .brand-name {
       font-family: 'Share Tech Mono', monospace;
-      font-size: clamp(2rem, 8vw, 2.8rem);
+      font-size: clamp(1.9rem, 8vw, 2.6rem);
       letter-spacing: 0.04em;
       line-height: 1;
       margin-bottom: 10px;
       color: var(--text);
     }
-    .brand-name .zero { color: var(--crimson); text-shadow: 0 0 14px var(--crimson); }
+    .brand-name .zero {
+      color: var(--crimson);
+      text-shadow: 0 0 16px var(--crimson);
+    }
 
-    .tagline { font-size: 0.95rem; color: var(--muted); font-style: italic; margin-bottom: 8px; }
-    .pillars { font-size: 0.75rem; color: #44445a; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 36px; }
+    .tagline { font-size: 0.9rem; color: var(--muted); font-style: italic; margin-bottom: 7px; }
+    .pillars { font-size: 0.72rem; color: #3a3a52; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 40px; }
 
-    .btn-group { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 380px; margin-bottom: 32px; }
+    .section-label {
+      width: 100%; max-width: 380px;
+      font-size: 0.64rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase;
+      color: #3a3a52; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: #1a1a28; }
+
+    .link-group { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 380px; margin-bottom: 24px; }
 
     .btn {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 14px 20px; border-radius: 8px; text-decoration: none;
-      font-size: 0.95rem; font-weight: 600;
-      transition: transform 0.15s, box-shadow 0.15s, background 0.15s;
+      padding: 14px 18px; border-radius: 9px; text-decoration: none;
+      font-size: 0.9rem; font-weight: 600;
+      transition: transform 0.14s, box-shadow 0.14s, background 0.14s, border-color 0.14s;
       cursor: pointer;
     }
     .btn:hover { transform: translateY(-2px); }
-    .btn .arrow { opacity: 0.5; font-size: 1rem; }
+    .btn .label { display: flex; align-items: center; gap: 9px; }
+    .btn .arrow { opacity: 0.4; font-size: 1.1rem; flex-shrink: 0; }
 
-    .btn-yt { background: var(--card); border: 1px solid var(--cyan); color: var(--cyan); box-shadow: 0 0 0 0 var(--cyan-glow); }
-    .btn-yt:hover { background: rgba(0,229,255,0.06); box-shadow: 0 4px 20px var(--cyan-glow); }
+    .btn-primary { background: var(--card); border: 1px solid var(--cyan); color: var(--cyan); box-shadow: 0 0 0 0 var(--cyan-glow); }
+    .btn-primary:hover { background: var(--cyan-dim); box-shadow: 0 6px 24px var(--cyan-glow); }
 
-    .social-row { display: flex; gap: 10px; width: 100%; max-width: 380px; margin-bottom: 12px; }
+    .btn-reading { background: #100808; border: 1px solid #3a1010; color: #cc6666; }
+    .btn-reading:hover { background: var(--crimson-dim); border-color: var(--crimson); color: #ff7070; box-shadow: 0 6px 24px var(--crimson-glow); }
+
+    .social-row { display: flex; gap: 8px; width: 100%; max-width: 380px; margin-bottom: 24px; }
     .btn-social {
-      flex: 1; justify-content: center; background: var(--card); border: 1px solid var(--border);
-      color: var(--muted); font-size: 0.82rem; font-weight: 500; padding: 11px 10px; gap: 6px;
+      flex: 1; justify-content: center; padding: 11px 8px;
+      background: var(--card); border: 1px solid var(--border); color: var(--muted);
+      font-size: 0.8rem; font-weight: 500; border-radius: 9px;
+      text-decoration: none; text-align: center;
+      transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.14s;
     }
-    .btn-social:hover { border-color: #333350; color: var(--text); background: #15151f; }
-    .btn-social .arrow { display: none; }
+    .btn-social:hover { background: var(--card-hover); border-color: var(--border-hover); color: var(--text); transform: translateY(-1px); }
 
-    .btn-reading { background: #130a0a; border: 1px solid var(--crimson); color: #ff6b6b; box-shadow: 0 0 0 0 var(--crimson-glow); }
-    .btn-reading:hover { background: rgba(204,26,26,0.08); box-shadow: 0 4px 20px var(--crimson-glow); }
-
-    .divider { font-size: 0.7rem; letter-spacing: 0.2em; color: #2a2a3a; text-transform: uppercase; margin: 4px 0 12px; width: 100%; max-width: 380px; text-align: center; }
-
-    footer { margin-top: auto; padding-top: 32px; font-size: 0.72rem; color: #333346; text-align: center; line-height: 1.8; }
-    footer a { color: #444460; text-decoration: none; }
+    footer { margin-top: auto; padding-top: 36px; font-size: 0.68rem; color: #2e2e42; text-align: center; line-height: 2; }
+    footer a { color: #3e3e58; text-decoration: none; }
     footer a:hover { color: var(--muted); }
   </style>
 </head>
@@ -85,7 +102,7 @@
 
   <div class="logo-wrap">
     <svg class="logo-svg" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="14" y="8" width="38" height="48" rx="3" fill="#111118" stroke="#cc1a1a" stroke-width="1.5"/>
+      <rect x="14" y="8" width="38" height="48" rx="3" fill="#0f0f18" stroke="#cc1a1a" stroke-width="1.5"/>
       <rect x="20" y="18" width="26" height="5" rx="1.5" fill="#cc1a1a" opacity="0.9"/>
       <rect x="20" y="28" width="18" height="5" rx="1.5" fill="#cc1a1a" opacity="0.6"/>
       <rect x="20" y="38" width="22" height="5" rx="1.5" fill="#cc1a1a" opacity="0.4"/>
@@ -99,37 +116,32 @@
   <p class="tagline">They redact it. I find it.</p>
   <p class="pillars">UAPs · Cover-ups · Ancient Mysteries · Prison Planet</p>
 
-  <div class="btn-group">
-    <a class="btn btn-yt" href="https://www.youtube.com/@m0rtyunredacted" target="_blank" rel="noopener">
-      <span>▶ Watch on YouTube</span>
+  <p class="section-label">Watch</p>
+  <div class="link-group">
+    <a class="btn btn-primary" href="https://www.youtube.com/@m0rtyunredacted" target="_blank" rel="noopener">
+      <span class="label">▶  YouTube</span>
       <span class="arrow">›</span>
     </a>
   </div>
 
+  <p class="section-label">Follow</p>
   <div class="social-row">
-    <a class="btn btn-social" href="https://x.com/m0rtyunredacted" target="_blank" rel="noopener">
-      𝕏 &nbsp;@m0rtyunredacted
-    </a>
-    <a class="btn btn-social" href="https://www.tiktok.com/@m0rtyunredacted" target="_blank" rel="noopener">
-      ▷ TikTok
-    </a>
+    <a class="btn-social" href="https://x.com/m0rtyunredacted" target="_blank" rel="noopener">𝕏 @m0rtyunredacted</a>
+    <a class="btn-social" href="https://www.tiktok.com/@m0rtyunredacted" target="_blank" rel="noopener">▷ TikTok</a>
   </div>
 
-  <p class="divider">— Dive Deeper —</p>
-
-  <div class="btn-group">
-    <a class="btn btn-reading" href="https://x.com/m0rtyunredacted/status/2026733304246845704?s=20" target="_blank" rel="noopener">
-      <span>📚 Books They Don't Want You Reading</span>
+  <p class="section-label">Read</p>
+  <div class="link-group">
+    <a class="btn btn-reading" href="/reading.html">
+      <span class="label">📚  Recommended Reading</span>
       <span class="arrow">›</span>
     </a>
   </div>
 
   <footer>
     <p>© 2026 M0rty Unredacted</p>
-    <p style="margin-top:6px;">Contains affiliate links. Qualifying purchases may generate a commission.</p>
-    <p style="margin-top:8px;">
-      <a href="/privacy.html">Privacy Policy</a> &nbsp;·&nbsp; <a href="/terms.html">Terms of Service</a>
-    </p>
+    <p>Contains affiliate links. Qualifying purchases may generate a commission.</p>
+    <p><a href="/privacy.html">Privacy Policy</a>  ·  <a href="/terms.html">Terms of Service</a></p>
   </footer>
 
 </body>
