@@ -34,7 +34,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 52px 20px 44px;
+      padding: 72px 20px 44px;
     }
 
     .logo-wrap { margin-bottom: 8px; }
@@ -96,9 +96,17 @@
     footer { margin-top: auto; padding-top: 36px; font-size: 0.68rem; color: #2e2e42; text-align: center; line-height: 2; }
     footer a { color: #3e3e58; text-decoration: none; }
     footer a:hover { color: var(--muted); }
+
+    .site-top-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; justify-content: flex-end; padding: 10px 20px; background: rgba(10,10,15,0.85); backdrop-filter: blur(8px); border-bottom: 1px solid #1a1a28; }
+    .yt-nav-link { font-size: 0.78rem; color: var(--cyan); text-decoration: none; letter-spacing: 0.06em; transition: color 0.15s; white-space: nowrap; }
+    .yt-nav-link:hover { color: var(--text); }
   </style>
 </head>
 <body>
+
+  <nav class="site-top-nav">
+    <a class="yt-nav-link" href="https://www.youtube.com/@M0rtyUnredacted" target="_blank" rel="noopener">&#9654;&#xFE0E; YouTube &#8594;</a>
+  </nav>
 
   <div class="logo-wrap">
     <svg class="logo-svg" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
