@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blog — M0rty Unredacted</title>
+  <meta name="description" content="Deep-dive articles on UAPs, government cover-ups, ancient mysteries, and the prison planet theory. Written by M0rty Unredacted." />
+  <meta name="robots" content="index, follow" />
+  <link rel="canonical" href="https://m0rtyunredacted.github.io/blog/" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@400;500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --card: #0f0f18;
+      --card-hover: #141420;
+      --border: #1e1e2e;
+      --border-hover: #2a2a3e;
+      --crimson: #cc1a1a;
+      --crimson-dim: rgba(204,26,26,0.12);
+      --cyan: #00e5ff;
+      --text: #e8e8f0;
+      --muted: #666680;
+      --subtle: #9999b0;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      padding: 72px 20px 60px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .site-top-nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; justify-content: flex-end;
+      padding: 10px 20px;
+      background: rgba(10,10,15,0.85);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid #1a1a28;
+    }
+    .yt-nav-link {
+      font-size: 0.78rem; color: var(--cyan); text-decoration: none;
+      letter-spacing: 0.06em; transition: color 0.15s; white-space: nowrap;
+    }
+    .yt-nav-link:hover { color: var(--text); }
+
+    .index-wrap { width: 100%; max-width: 700px; padding-top: 32px; }
+
+    .index-header { margin-bottom: 40px; }
+    .index-header .back-link {
+      font-size: 0.8rem; color: var(--muted); text-decoration: none;
+      letter-spacing: 0.04em; transition: color 0.15s; display: inline-block; margin-bottom: 24px;
+    }
+    .index-header .back-link:hover { color: var(--cyan); }
+    .index-header h1 {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: clamp(1.4rem, 4vw, 1.8rem);
+      margin-bottom: 8px;
+    }
+    .index-header h1 .z { color: var(--crimson); }
+    .index-header p { font-size: 0.88rem; color: var(--muted); }
+
+    .section-label {
+      font-size: 0.64rem; font-weight: 700; letter-spacing: 0.2em;
+      text-transform: uppercase; color: #3a3a52;
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-label::after { content: ''; flex: 1; height: 1px; background: #1a1a28; }
+
+    .post-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 48px; }
+
+    .post-card {
+      display: block; padding: 20px 22px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 9px; text-decoration: none;
+      transition: background 0.14s, border-color 0.14s, transform 0.14s;
+    }
+    .post-card:hover {
+      background: var(--card-hover);
+      border-color: var(--border-hover);
+      transform: translateY(-2px);
+    }
+    .post-card-meta {
+      font-size: 0.68rem; color: var(--crimson);
+      letter-spacing: 0.12em; text-transform: uppercase;
+      margin-bottom: 7px; font-weight: 700;
+    }
+    .post-card-title {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.95rem; color: var(--text);
+      margin-bottom: 7px; line-height: 1.4;
+    }
+    .post-card-teaser {
+      font-size: 0.82rem; color: var(--muted); line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .post-card-date { font-size: 0.72rem; color: #3a3a52; }
+
+    footer {
+      margin-top: auto; padding-top: 36px;
+      font-size: 0.68rem; color: #2e2e42;
+      text-align: center; line-height: 2;
+    }
+    footer a { color: #3e3e58; text-decoration: none; }
+    footer a:hover { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+  <nav class="site-top-nav">
+    <a class="yt-nav-link" href="https://www.youtube.com/@M0rtyUnredacted" target="_blank" rel="noopener">&#9654;&#xFE0E; YouTube &#8594;</a>
+  </nav>
+
+  <div class="index-wrap">
+
+    <div class="index-header">
+      <a class="back-link" href="/">&#8592; Home</a>
+      <h1>M<span class="z">0</span>RTY: UNREDACTED &mdash; Blog</h1>
+      <p>Deep-dive articles on UAPs, cover-ups, ancient mysteries, and the prison planet theory.</p>
+    </div>
+
+    <p class="section-label">Latest</p>
+
+    <div class="post-list">
+
+      <a class="post-card" href="/blog/uap-trump-2026-disclosure-order.html">
+        <p class="post-card-meta">UAP Disclosure Arc &nbsp;&#183;&nbsp; EP01</p>
+        <p class="post-card-title">Trump's 2026 UAP Disclosure Order: What the Directive Actually Says — and Why the Black Vault Went Dark the Same Night</p>
+        <p class="post-card-teaser">Trump ordered agencies to release all UAP files. Hours later, 3.8 million pages of independent UAP records vanished from the web's largest archive. Here's what the directive actually orders — and what it doesn't.</p>
+        <p class="post-card-date">March 1, 2026</p>
+      </a>
+
+    </div>
+
+    <footer>
+      <p>&copy; 2026 M0rty Unredacted</p>
+      <p><a href="/privacy.html">Privacy Policy</a> &nbsp;&middot;&nbsp; <a href="/terms.html">Terms of Service</a></p>
+    </footer>
+
+  </div>
+
+</body>
+</html>
