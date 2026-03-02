@@ -40,10 +40,10 @@
     .post-body .affiliate-link { color: #cc9966; border-bottom-color: rgba(204,153,102,0.3); }
     .post-body .affiliate-link:hover { border-bottom-color: #cc9966; }
     .pullquote { border-left: 3px solid var(--crimson); padding: 14px 20px; margin: 2em 0; background: rgba(204,26,26,0.05); font-style: italic; color: var(--subtle); font-size: 0.95rem; line-height: 1.7; }
-    .yt-cta { margin: 2.5em 0; padding: 20px 24px; background: var(--card); border: 1px solid #1e1e2e; border-left: 3px solid var(--cyan); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 16px; text-decoration: none; transition: background 0.15s, border-color 0.15s; }
-    .yt-cta:hover { background: #141420; border-color: #2a2a3e; border-left-color: var(--cyan); }
-    .yt-cta-text { font-size: 0.88rem; color: var(--subtle); }
-    .yt-cta-label { font-family: 'Share Tech Mono', monospace; font-size: 0.82rem; color: var(--cyan); letter-spacing: 0.06em; white-space: nowrap; }
+    .yt-embed-wrap { margin: 2.5em 0; }
+    .yt-embed-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+    .yt-embed-container { position: relative; width: 100%; padding-bottom: 56.25%; border-radius: 8px; overflow: hidden; background: #000; border: 1px solid var(--border); }
+    .yt-embed-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
     .post-footer { margin-top: 3em; padding-top: 2em; border-top: 1px solid var(--border); }
     .affiliate-disclosure { font-size: 0.72rem; color: #3a3a52; margin-bottom: 1.5em; line-height: 1.6; }
     footer { font-size: 0.68rem; color: #2e2e42; text-align: center; line-height: 2; }
@@ -122,10 +122,17 @@
 
     </div>
 
-    <a class="yt-cta" href="https://www.youtube.com/watch?v=NPHdAX8Q4e4" target="_blank" rel="noopener">
-      <span class="yt-cta-text">Pentagon is sitting on 2,000+ UFO cases &#8212; Hegseth says more is coming. Watch the breakdown on YouTube.</span>
-      <span class="yt-cta-label">&#9654;&#xFE0E; Watch Now &#8594;</span>
-    </a>
+    <div class="yt-embed-wrap">
+      <p class="yt-embed-label">Watch on YouTube</p>
+      <div class="yt-embed-container">
+        <iframe
+          src="https://www.youtube.com/embed/NPHdAX8Q4e4"
+          title="Pentagon Is Sitting on 2,000+ UFO Cases - Hegseth Says More Coming"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen>
+        </iframe>
+      </div>
+    </div>
 
     <div class="post-footer">
       <p class="affiliate-disclosure">Contains affiliate links. Qualifying purchases may earn a commission at no extra cost to you.</p>
