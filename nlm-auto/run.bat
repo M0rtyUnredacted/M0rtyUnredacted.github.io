@@ -29,7 +29,7 @@ if not exist "config.json" (
     echo.
     notepad config.json
     echo After saving config.json, also copy credentials.json (service
-    echo account) to %APP_DIR%\ then run run.bat again.
+    echo account^) to %APP_DIR%\ then run run.bat again.
     pause
     exit /b 0
 )
