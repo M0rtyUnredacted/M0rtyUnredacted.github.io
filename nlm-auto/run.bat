@@ -2,46 +2,22 @@
 setlocal EnableDelayedExpansion
 
 set APP_DIR=C:\nlm_app
-set ZIP_URL=https://github.com/M0rtyUnredacted/nlm-auto/archive/refs/heads/main.zip
 set CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
 
 echo === NLM Automation App ===
 echo.
 
 :: -----------------------------------------------------------------
-:: 1. Create app directory
+:: 1. Make sure the app directory exists and go there
 :: -----------------------------------------------------------------
 if not exist "%APP_DIR%" (
     echo Creating %APP_DIR% ...
     mkdir "%APP_DIR%"
 )
-
-:: -----------------------------------------------------------------
-:: 2. Download latest code (no git required -- uses PowerShell)
-:: -----------------------------------------------------------------
-echo Downloading latest code from GitHub ...
-powershell -NoProfile -Command ^
-    "Invoke-WebRequest -Uri '%ZIP_URL%' -OutFile '$env:TEMP\nlm-auto.zip' -UseBasicParsing"
-if errorlevel 1 (
-    echo ERROR: Download failed. Check your internet connection.
-    pause & exit /b 1
-)
-
-echo Extracting ...
-powershell -NoProfile -Command ^
-    "Expand-Archive -Path '$env:TEMP\nlm-auto.zip' -DestinationPath '$env:TEMP\nlm-auto-extract' -Force"
-
-:: Copy files; never overwrite config.json, credentials.json, or state files
-powershell -NoProfile -Command ^
-    "Get-ChildItem '$env:TEMP\nlm-auto-extract\nlm-auto-main' | ForEach-Object { $dst = '%APP_DIR%\' + $_.Name; if ($_.Name -notin @('config.json','credentials.json','state.json','nlm_app.db') -or !(Test-Path $dst)) { Copy-Item $_.FullName $dst -Recurse -Force } }"
-
-del /q "%TEMP%\nlm-auto.zip" 2>nul
-rd /s /q "%TEMP%\nlm-auto-extract" 2>nul
-
 cd /d "%APP_DIR%"
 
 :: -----------------------------------------------------------------
-:: 3. Seed config.json on first run
+:: 2. Seed config.json on first run
 :: -----------------------------------------------------------------
 if not exist "config.json" (
     copy config_template.json config.json >nul
@@ -59,7 +35,7 @@ if not exist "config.json" (
 )
 
 :: -----------------------------------------------------------------
-:: 4. Check credentials.json
+:: 3. Check credentials.json
 :: -----------------------------------------------------------------
 if not exist "credentials.json" (
     echo ERROR: credentials.json not found in %APP_DIR%\
@@ -68,7 +44,7 @@ if not exist "credentials.json" (
 )
 
 :: -----------------------------------------------------------------
-:: 5. Install Python dependencies (if not already done)
+:: 4. Install Python dependencies (if not already done)
 :: -----------------------------------------------------------------
 if not exist "%APP_DIR%\.deps_installed" (
     echo Installing dependencies -- this only runs once ...
@@ -85,7 +61,7 @@ if not exist "%APP_DIR%\.deps_installed" (
 )
 
 :: -----------------------------------------------------------------
-:: 6. Chrome remote-debugging session
+:: 5. Chrome remote-debugging session
 ::
 :: If port 9222 is already open, reuse it.
 :: If not, kill any stale Chrome processes then launch fresh with
@@ -149,7 +125,7 @@ if errorlevel 1 (
 :chrome_ready
 
 :: -----------------------------------------------------------------
-:: 7. Launch app
+:: 6. Launch app
 :: -----------------------------------------------------------------
 echo.
 echo Starting NLM Automation App ...
