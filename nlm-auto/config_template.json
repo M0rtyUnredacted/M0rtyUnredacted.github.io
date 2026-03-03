@@ -1,5 +1,6 @@
 {
-  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN.",
+  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for a full walkthrough.",
+  "_chrome_profile_path_help": "Press Win+R, type %LOCALAPPDATA%\\Google\\Chrome\\User Data\\ and hit Enter. The folder named Default (or Profile 1) is your profile. Use the full path, e.g. C:\\Users\\YourName\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
 
   "google_drive": {
     "query_docs_folder_id":  "FILL_IN_your_Drive_query_docs_folder_id",

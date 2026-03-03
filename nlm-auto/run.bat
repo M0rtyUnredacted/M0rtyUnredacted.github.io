@@ -72,7 +72,7 @@ if not exist "%APP_DIR%\.deps_installed" (
 :: -----------------------------------------------------------------
 
 :: Read profile path from config.json
-for /f "delims=" %%P in ('python -c "import json,os; c=json.load(open('config.json')); p=c.get('notebooklm',{}).get('chrome_profile_path',''); ud=os.path.dirname(p) if p else ''; pd=os.path.basename(p) if p else 'Default'; print(ud+'|'+pd)" 2^>nul') do set CHROME_INFO=%%P
+for /f "delims=" %%P in ('python -c "import json,os; c=json.load(open('config.json')); p=c.get('notebooklm',{}).get('chrome_profile_path',''); ud=os.path.dirname(p) if p else os.path.join(os.environ.get('LOCALAPPDATA',''),chr(71)+'oogle',chr(67)+'hrome','User Data'); pd=os.path.basename(p) if p else 'Default'; print(ud+'|'+pd)" 2^>nul') do set CHROME_INFO=%%P
 for /f "tokens=1 delims=|" %%A in ("%CHROME_INFO%") do set CHROME_USER_DATA=%%A
 for /f "tokens=2 delims=|" %%B in ("%CHROME_INFO%") do set CHROME_PROFILE=%%B
 if "%CHROME_USER_DATA%"=="" set CHROME_USER_DATA=%LOCALAPPDATA%\Google\Chrome\User Data
