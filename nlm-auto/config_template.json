@@ -1,0 +1,22 @@
+{
+    "_comment": "Copy this file to config.json and fill in every value.",
+
+    "query_docs_folder_id": "PASTE_YOUR_DRIVE_QUERY_FOLDER_ID_HERE",
+    "tiktok_folder_id":     "PASTE_YOUR_DRIVE_TIKTOK_FOLDER_ID_HERE",
+    "sortit_folder_id":     "PASTE_YOUR_DRIVE_SORTIT_FOLDER_ID_HERE",
+
+    "notebook_url": "https://notebooklm.google.com/notebook/PASTE_YOUR_NOTEBOOK_ID_HERE",
+
+    "gmail_address":      "you@gmail.com",
+    "gmail_app_password": "xxxx xxxx xxxx xxxx",
+
+    "chrome_debug_url": "http://localhost:9222",
+
+    "nlm_poll_minutes":    15,
+    "tiktok_poll_minutes": 10,
+    "tiktok_gap_hours":    5,
+
+    "downloads_dir": "C:\\nlm_app\\downloads",
+
+    "log_level": "INFO"
+}
