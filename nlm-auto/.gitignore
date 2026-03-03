@@ -2,12 +2,17 @@
 credentials.json
 config.json
 state.json
+nlm_app.db
 
-# Downloads folder
+# Temp / downloads
+temp/
 downloads/
 
 # Chrome profile copy
 chrome_profile/
+
+# Sentinel file written by run.bat after first install
+.deps_installed
 
 # Python
 __pycache__/

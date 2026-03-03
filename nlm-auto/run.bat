@@ -17,7 +17,7 @@ if not exist "%APP_DIR%" (
 )
 
 :: -----------------------------------------------------------------
-:: 2. Download latest code  (no git required -- uses PowerShell)
+:: 2. Download latest code (no git required -- uses PowerShell)
 :: -----------------------------------------------------------------
 echo Downloading latest code from GitHub ...
 powershell -NoProfile -Command ^
@@ -30,16 +30,11 @@ if errorlevel 1 (
 echo Extracting ...
 powershell -NoProfile -Command ^
     "Expand-Archive -Path '$env:TEMP\nlm-auto.zip' -DestinationPath '$env:TEMP\nlm-auto-extract' -Force"
-if errorlevel 1 (
-    echo ERROR: Extraction failed.
-    pause & exit /b 1
-)
 
-:: Copy files into APP_DIR, skip config.json and credentials.json if they already exist
+:: Copy files; never overwrite config.json, credentials.json, or state files
 powershell -NoProfile -Command ^
-    "Get-ChildItem '$env:TEMP\nlm-auto-extract\nlm-auto-main' | ForEach-Object { $dst = '%APP_DIR%\' + $_.Name; if ($_.Name -notin @('config.json','credentials.json','state.json') -or !(Test-Path $dst)) { Copy-Item $_.FullName $dst -Recurse -Force } }"
+    "Get-ChildItem '$env:TEMP\nlm-auto-extract\nlm-auto-main' | ForEach-Object { $dst = '%APP_DIR%\' + $_.Name; if ($_.Name -notin @('config.json','credentials.json','state.json','nlm_app.db') -or !(Test-Path $dst)) { Copy-Item $_.FullName $dst -Recurse -Force } }"
 
-:: Clean up temp files
 del /q "%TEMP%\nlm-auto.zip" 2>nul
 rd /s /q "%TEMP%\nlm-auto-extract" 2>nul
 
@@ -73,42 +68,85 @@ if not exist "credentials.json" (
 )
 
 :: -----------------------------------------------------------------
-:: 5. Install Python dependencies
+:: 5. Install Python dependencies (if not already done)
 :: -----------------------------------------------------------------
-echo Installing dependencies ...
-pip install -r requirements.txt --quiet --disable-pip-version-check
-if errorlevel 1 (
-    echo ERROR: pip install failed. Is Python 3 installed and on PATH?
-    pause & exit /b 1
+if not exist "%APP_DIR%\.deps_installed" (
+    echo Installing dependencies -- this only runs once ...
+    pip install -r requirements.txt --quiet --disable-pip-version-check
+    if errorlevel 1 (
+        echo ERROR: pip install failed. Is Python 3 installed and on PATH?
+        pause & exit /b 1
+    )
+    playwright install chromium --quiet 2>nul
+    echo installed > "%APP_DIR%\.deps_installed"
+    echo Dependencies installed.
+) else (
+    echo Dependencies already installed.
 )
-playwright install chromium --quiet 2>nul
 
 :: -----------------------------------------------------------------
 :: 6. Chrome remote-debugging session
-::    Reads chrome_profile_path from config.json via Python
+::
+:: If port 9222 is already open, reuse it.
+:: If not, kill any stale Chrome processes then launch fresh with
+:: --remote-debugging-port=9222 using the profile from config.json.
+::
+:: IMPORTANT: uses 127.0.0.1 -- on Windows, 'localhost' may resolve
+:: to IPv6 (::1) but Chrome binds on IPv4 only.
 :: -----------------------------------------------------------------
+
+:: Read profile path from config.json
 for /f "delims=" %%P in ('python -c "import json,os; c=json.load(open('config.json')); p=c.get('notebooklm',{}).get('chrome_profile_path',''); ud=os.path.dirname(p) if p else ''; pd=os.path.basename(p) if p else 'Default'; print(ud+'|'+pd)" 2^>nul') do set CHROME_INFO=%%P
 for /f "tokens=1 delims=|" %%A in ("%CHROME_INFO%") do set CHROME_USER_DATA=%%A
 for /f "tokens=2 delims=|" %%B in ("%CHROME_INFO%") do set CHROME_PROFILE=%%B
 if "%CHROME_USER_DATA%"=="" set CHROME_USER_DATA=%LOCALAPPDATA%\Google\Chrome\User Data
 if "%CHROME_PROFILE%"=="" set CHROME_PROFILE=Default
 
-netstat -ano | findstr ":9222" >nul 2>&1
+echo Checking Chrome debug port 9222 ...
+powershell -NoProfile -Command ^
+    "try { $r=(Invoke-WebRequest 'http://127.0.0.1:9222/json/version' -UseBasicParsing -TimeoutSec 2).StatusCode; exit ($r -ne 200) } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    echo Starting Chrome with remote-debugging on port 9222 ...
-    echo   Profile: %CHROME_USER_DATA%\%CHROME_PROFILE%
+    echo Port 9222 not responding -- launching Chrome ...
+    echo   User data: %CHROME_USER_DATA%
+    echo   Profile  : %CHROME_PROFILE%
+
+    :: Kill any Chrome that is already running without a debug port
+    :: (it would block a new launch from binding port 9222)
+    taskkill /f /im chrome.exe >nul 2>&1
+    timeout /t 2 /nobreak >nul
+
     if not exist %CHROME% (
-        echo WARNING: Chrome not found at default path.
-        echo          Start Chrome manually with --remote-debugging-port=9222
-    ) else (
-        start "" %CHROME% --remote-debugging-port=9222 ^
-            --user-data-dir="%CHROME_USER_DATA%" ^
-            --profile-directory="%CHROME_PROFILE%"
-        timeout /t 3 /nobreak >nul
+        echo ERROR: Chrome not found at %CHROME%
+        echo Install Chrome or update the CHROME variable in run.bat.
+        pause & exit /b 1
     )
+
+    start "" %CHROME% ^
+        --remote-debugging-port=9222 ^
+        --user-data-dir="%CHROME_USER_DATA%" ^
+        --profile-directory="%CHROME_PROFILE%" ^
+        --no-first-run ^
+        --no-default-browser-check
+
+    :: Wait up to 15s for Chrome to bind the port
+    echo Waiting for Chrome to bind port 9222 ...
+    set /a tries=0
+    :wait_loop
+    timeout /t 2 /nobreak >nul
+    set /a tries+=1
+    powershell -NoProfile -Command ^
+        "try { $r=(Invoke-WebRequest 'http://127.0.0.1:9222/json/version' -UseBasicParsing -TimeoutSec 1).StatusCode; exit ($r -ne 200) } catch { exit 1 }" >nul 2>&1
+    if not errorlevel 1 goto chrome_ready
+    if !tries! lss 7 goto wait_loop
+    echo ERROR: Chrome did not bind port 9222 after 14 seconds.
+    echo   Try running this manually to diagnose:
+    echo   curl http://127.0.0.1:9222/json/version
+    echo   Also check: dir "%LOCALAPPDATA%\Google\Chrome\User Data\" /b /ad
+    pause & exit /b 1
 ) else (
-    echo Chrome debug port 9222 already open - reusing session.
+    echo Chrome already on port 9222 -- reusing session.
 )
+:chrome_ready
 
 :: -----------------------------------------------------------------
 :: 7. Launch app

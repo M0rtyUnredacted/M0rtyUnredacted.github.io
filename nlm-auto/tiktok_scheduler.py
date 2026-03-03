@@ -1,11 +1,11 @@
 """TikTok Scheduler — every 10 min.
 
 Pipeline per new MP4 in Drive tiktok_manual_folder:
-  1. Download MP4 locally
-  2. Read paired .md sidecar for caption (same filename, .md extension)
-  3. Open TikTok Studio in Chrome
-  4. Upload MP4, fill caption, schedule at (last_post + post_interval_hours)
-  5. Mark as processed; update last_post timestamp
+  1. Download MP4 to temp dir
+  2. Read paired .md sidecar for caption
+  3. Open TikTok Studio upload page in Chrome (CDP on 127.0.0.1:9222)
+  4. Upload MP4, fill caption, schedule at max(now+20min, last_post+5h)
+  5. Mark as scheduled in SQLite
 """
 
 import logging
@@ -14,22 +14,23 @@ import time
 from datetime import datetime, timedelta
 
 import chrome_client
+import db
 from drive_client import DriveClient
-from state import load_state, save_state
 
 log = logging.getLogger(__name__)
 
+TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
+CDP_URL = "http://127.0.0.1:9222"
 TIKTOK_STUDIO_URL = "https://www.tiktok.com/creator-center/upload"
 
 
 def run(config: dict, ui_log):
+    db.init()
     drive = DriveClient()
-    state = load_state()
-    processed = set(state.get("processed_tiktok", []))
 
     folder_id = config["google_drive"]["tiktok_manual_folder_id"]
     mp4s = drive.list_mp4s(folder_id)
-    new_mp4s = [f for f in mp4s if f["id"] not in processed]
+    new_mp4s = [f for f in mp4s if not db.is_tiktok_processed(f["id"])]
 
     if not new_mp4s:
         ui_log("TikTok Scheduler: no new videos.")
@@ -40,21 +41,20 @@ def run(config: dict, ui_log):
 
     for mp4 in new_mp4s:
         try:
-            _process_video(mp4, config, drive, state, ui_log)
+            _process_video(mp4, config, drive, ui_log)
         except Exception as exc:
-            log.exception("TikTok Scheduler: failed on %s", mp4["name"])
+            log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
+            db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
             raise RuntimeError(f"TikTok failed on '{mp4['name']}': {exc}") from exc
 
 
-def _process_video(mp4: dict, config: dict, drive: DriveClient, state: dict, ui_log):
+def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
     file_id = mp4["id"]
     name = mp4["name"]
     ui_log(f"TikTok: processing '{name}' ...")
 
-    downloads_dir = os.path.abspath(config.get("downloads_dir", "downloads"))
-    os.makedirs(downloads_dir, exist_ok=True)
-
-    local_mp4 = os.path.join(downloads_dir, name)
+    os.makedirs(TEMP_DIR, exist_ok=True)
+    local_mp4 = os.path.join(TEMP_DIR, name)
     drive.download_file(file_id, local_mp4)
     ui_log(f"TikTok: downloaded '{name}'.")
 
@@ -63,32 +63,31 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, state: dict, ui_
     ui_log(f"TikTok: caption = {caption[:80]}{'...' if len(caption) > 80 else ''}")
 
     gap_hours = config.get("tiktok", {}).get("post_interval_hours", 5)
-    last_post_str = state.get("last_tiktok_post")
+    last_post_str = db.last_tiktok_scheduled_time()
     if last_post_str:
         last_post = datetime.fromisoformat(last_post_str)
-        schedule_dt = last_post + timedelta(hours=gap_hours)
-        if schedule_dt < datetime.now():
-            schedule_dt = datetime.now() + timedelta(hours=gap_hours)
+        schedule_dt = max(
+            datetime.now() + timedelta(minutes=20),
+            last_post + timedelta(hours=gap_hours),
+        )
     else:
         schedule_dt = datetime.now() + timedelta(hours=gap_hours)
 
     ui_log(f"TikTok: scheduling at {schedule_dt.strftime('%Y-%m-%d %H:%M')} ...")
 
-    page = chrome_client.new_page("http://localhost:9222")
+    page = chrome_client.new_page(CDP_URL)
     try:
         _tiktok_upload(page, local_mp4, caption, schedule_dt, ui_log)
     finally:
         page.close()
 
-    state.setdefault("processed_tiktok", []).append(file_id)
-    state["last_tiktok_post"] = schedule_dt.isoformat()
-    save_state(state)
-
+    db.mark_tiktok_scheduled(file_id, name, schedule_dt.isoformat())
     os.remove(local_mp4)
     ui_log(f"TikTok: '{name}' scheduled.")
 
 
 def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
+    """Priority: sidecar .md > sidecar .txt > filename-based fallback."""
     stem = os.path.splitext(mp4_name)[0]
     for f in drive.list_files(folder_id):
         if f["name"] in (stem + ".md", stem + ".txt"):
@@ -104,7 +103,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     page.goto(TIKTOK_STUDIO_URL, wait_until="networkidle", timeout=60_000)
     time.sleep(3)
 
-    # ── Upload file ───────────────────────────────────────────────────────────
+    # ── Upload ────────────────────────────────────────────────────────────────
     ui_log("TikTok: uploading video ...")
     upload_input = page.locator("input[type='file']").first
     upload_input.wait_for(timeout=20_000)
@@ -131,7 +130,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     page.keyboard.type(caption[:2200])
     time.sleep(1)
 
-    # ── Schedule ─────────────────────────────────────────────────────────────
+    # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
     schedule_toggle = page.locator(
         "label:has-text('Schedule'), input[value='schedule'], [aria-label*='Schedule']"
