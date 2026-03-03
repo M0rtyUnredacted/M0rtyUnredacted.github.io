@@ -2,7 +2,7 @@
 setlocal EnableDelayedExpansion
 
 set APP_DIR=C:\nlm_app
-set CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
+set CHROME="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 
 echo === NLM Automation App ===
 echo.
