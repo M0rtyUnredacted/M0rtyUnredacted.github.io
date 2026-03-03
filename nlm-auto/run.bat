@@ -59,14 +59,24 @@ if errorlevel 1 (
 playwright install chromium --quiet 2>nul
 
 :: ── 6. Chrome remote-debugging session ───────────────────────────────────────
+:: Read chrome_profile_path from config.json via Python (falls back to default)
+for /f "delims=" %%P in ('python -c "import json,os; c=json.load(open('config.json')); p=c.get('notebooklm',{}).get('chrome_profile_path',''); ud=os.path.dirname(p) if p else ''; pd=os.path.basename(p) if p else 'Default'; print(ud+'|'+pd)" 2^>nul') do set CHROME_INFO=%%P
+for /f "tokens=1 delims=|" %%A in ("%CHROME_INFO%") do set CHROME_USER_DATA=%%A
+for /f "tokens=2 delims=|" %%B in ("%CHROME_INFO%") do set CHROME_PROFILE=%%B
+if "%CHROME_USER_DATA%"=="" set CHROME_USER_DATA=%LOCALAPPDATA%\Google\Chrome\User Data
+if "%CHROME_PROFILE%"=="" set CHROME_PROFILE=Default
+
 netstat -ano | findstr ":9222" >nul 2>&1
 if errorlevel 1 (
     echo Starting Chrome with remote-debugging on port 9222 ...
+    echo   Profile: %CHROME_USER_DATA%\%CHROME_PROFILE%
     if not exist %CHROME% (
         echo WARNING: Chrome not found at default path.
         echo          Start Chrome manually with --remote-debugging-port=9222
     ) else (
-        start "" %CHROME% --remote-debugging-port=9222 --user-data-dir="%APP_DIR%\chrome_profile"
+        start "" %CHROME% --remote-debugging-port=9222 ^
+            --user-data-dir="%CHROME_USER_DATA%" ^
+            --profile-directory="%CHROME_PROFILE%"
         timeout /t 3 /nobreak >nul
     )
 ) else (

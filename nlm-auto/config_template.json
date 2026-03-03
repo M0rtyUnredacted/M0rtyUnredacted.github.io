@@ -1,22 +1,32 @@
 {
-    "_comment": "Copy this file to config.json and fill in every value.",
+  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN.",
 
-    "query_docs_folder_id": "PASTE_YOUR_DRIVE_QUERY_FOLDER_ID_HERE",
-    "tiktok_folder_id":     "PASTE_YOUR_DRIVE_TIKTOK_FOLDER_ID_HERE",
-    "sortit_folder_id":     "PASTE_YOUR_DRIVE_SORTIT_FOLDER_ID_HERE",
+  "google_drive": {
+    "query_docs_folder_id":  "FILL_IN_your_Drive_query_docs_folder_id",
+    "tiktok_manual_folder_id": "FILL_IN_your_Drive_TikTok_folder_id",
+    "poll_interval_minutes": 15
+  },
 
-    "notebook_url": "https://notebooklm.google.com/notebook/PASTE_YOUR_NOTEBOOK_ID_HERE",
+  "notebooklm": {
+    "notebook_url": "https://notebooklm.google.com/notebook/FILL_IN_your_notebook_id",
+    "chrome_profile_path": "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
+    "style_doc_id": "FILL_IN_optional_style_google_doc_id_or_leave_empty"
+  },
 
-    "gmail_address":      "you@gmail.com",
-    "gmail_app_password": "xxxx xxxx xxxx xxxx",
+  "tiktok": {
+    "post_interval_hours": 5,
+    "chrome_profile_path": "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Google\\Chrome\\User Data\\Default"
+  },
 
-    "chrome_debug_url": "http://localhost:9222",
+  "notifications": {
+    "email": "you@gmail.com",
+    "notify_on_failure": true,
+    "gmail_app_password": "xxxx xxxx xxxx xxxx"
+  },
 
-    "nlm_poll_minutes":    15,
-    "tiktok_poll_minutes": 10,
-    "tiktok_gap_hours":    5,
+  "daily_quota": {
+    "max_nlm_videos_per_day": 6
+  },
 
-    "downloads_dir": "C:\\nlm_app\\downloads",
-
-    "log_level": "INFO"
+  "downloads_dir": "C:\\nlm_app\\downloads"
 }

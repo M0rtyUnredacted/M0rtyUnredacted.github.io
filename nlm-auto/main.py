@@ -1,10 +1,4 @@
-"""NLM Automation App — entry point.
-
-Starts:
-  - Gradio UI  (http://localhost:7860)
-  - NLM Watcher        (every nlm_poll_minutes, default 15)
-  - TikTok Scheduler   (every tiktok_poll_minutes, default 10)
-"""
+"""NLM Automation App — entry point."""
 
 import json
 import logging
@@ -35,13 +29,26 @@ CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 def load_config() -> dict:
     with open(CONFIG_PATH, encoding="utf-8") as fh:
         cfg = json.load(fh)
-    # Basic validation
-    required = ["query_docs_folder_id", "notebook_url", "gmail_app_password"]
-    missing = [k for k in required if "PASTE" in str(cfg.get(k, "PASTE")) or not cfg.get(k)]
-    if missing:
+
+    errors = []
+    gd = cfg.get("google_drive", {})
+    nlm = cfg.get("notebooklm", {})
+    notif = cfg.get("notifications", {})
+
+    if "FILL_IN" in gd.get("query_docs_folder_id", "FILL_IN"):
+        errors.append("google_drive.query_docs_folder_id")
+    if "FILL_IN" in gd.get("tiktok_manual_folder_id", "FILL_IN"):
+        errors.append("google_drive.tiktok_manual_folder_id")
+    if "FILL_IN" in nlm.get("notebook_url", "FILL_IN"):
+        errors.append("notebooklm.notebook_url")
+    if "xxxx" in notif.get("gmail_app_password", "xxxx"):
+        errors.append("notifications.gmail_app_password")
+
+    if errors:
         sys.exit(
-            f"ERROR: config.json is incomplete. Please fill in: {', '.join(missing)}\n"
-            f"  File: {CONFIG_PATH}"
+            "ERROR: config.json is incomplete. Please fill in:\n"
+            + "\n".join(f"  • {k}" for k in errors)
+            + f"\n\nFile: {CONFIG_PATH}"
         )
     return cfg
 
@@ -80,9 +87,8 @@ def main():
     ui_module.launch()
     time.sleep(2)
 
-    # Schedule jobs
-    nlm_minutes = config.get("nlm_poll_minutes", 15)
-    tiktok_minutes = config.get("tiktok_poll_minutes", 10)
+    nlm_minutes = config.get("google_drive", {}).get("poll_interval_minutes", 15)
+    tiktok_minutes = 10  # TikTok always checks every 10 min
 
     nlm_job = make_nlm_job(config)
     tiktok_job = make_tiktok_job(config)
@@ -90,9 +96,9 @@ def main():
     schedule.every(nlm_minutes).minutes.do(nlm_job)
     schedule.every(tiktok_minutes).minutes.do(tiktok_job)
 
-    log.info("NLM Watcher scheduled every %d min.", nlm_minutes)
-    log.info("TikTok Scheduler scheduled every %d min.", tiktok_minutes)
-    ui_module.ui_log(f"Scheduler started. NLM every {nlm_minutes} min, TikTok every {tiktok_minutes} min.")
+    ui_module.ui_log(
+        f"Scheduler started — NLM every {nlm_minutes} min, TikTok every {tiktok_minutes} min."
+    )
 
     # Run both jobs immediately on startup so we don't wait for the first interval
     ui_module.ui_log("Running initial checks ...")
@@ -108,8 +114,7 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
-    # Main loop
-    log.info("App running. Gradio UI → http://localhost:7860  (Ctrl+C to stop)")
+    log.info("Running. Gradio UI → http://localhost:7860  (Ctrl+C to stop)")
     while True:
         schedule.run_pending()
         time.sleep(30)

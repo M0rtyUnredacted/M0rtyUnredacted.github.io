@@ -9,11 +9,14 @@ log = logging.getLogger(__name__)
 
 
 def send_failure(config: dict, subject: str, exc: Exception) -> None:
-    """Send a failure email via Gmail App Password."""
-    gmail_address = config.get("gmail_address", "")
-    app_password = config.get("gmail_app_password", "")
+    notif = config.get("notifications", {})
+    if not notif.get("notify_on_failure", True):
+        return
 
-    if not gmail_address or not app_password or "xxxx" in app_password:
+    address = notif.get("email", "")
+    password = notif.get("gmail_app_password", "").replace(" ", "")
+
+    if not address or not password or "xxxx" in password:
         log.warning("Gmail not configured — skipping failure email.")
         return
 
@@ -23,15 +26,14 @@ def send_failure(config: dict, subject: str, exc: Exception) -> None:
         f"Error: {exc}\n\n"
         f"Traceback:\n{traceback.format_exc()}"
     )
-
     msg = MIMEText(body)
     msg["Subject"] = f"[NLM-Auto] FAILURE: {subject}"
-    msg["From"] = gmail_address
-    msg["To"] = gmail_address
+    msg["From"] = address
+    msg["To"] = address
 
     try:
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(gmail_address, app_password.replace(" ", ""))
+            smtp.login(address, password)
             smtp.send_message(msg)
         log.info("Failure email sent: %s", subject)
     except Exception as mail_exc:

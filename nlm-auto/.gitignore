@@ -1,0 +1,17 @@
+# Never commit secrets or local state
+credentials.json
+config.json
+state.json
+
+# Downloads folder
+downloads/
+
+# Chrome profile copy
+chrome_profile/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
