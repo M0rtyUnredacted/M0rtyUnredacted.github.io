@@ -55,35 +55,36 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
 
     os.makedirs(TEMP_DIR, exist_ok=True)
     local_mp4 = os.path.join(TEMP_DIR, name)
-    drive.download_file(file_id, local_mp4)
-    ui_log(f"TikTok: downloaded '{name}'.")
-
-    folder_id = config["google_drive"]["tiktok_manual_folder_id"]
-    caption = _get_caption(drive, folder_id, name)
-    ui_log(f"TikTok: caption = {caption[:80]}{'...' if len(caption) > 80 else ''}")
-
-    gap_hours = config.get("tiktok", {}).get("post_interval_hours", 5)
-    last_post_str = db.last_tiktok_scheduled_time()
-    if last_post_str:
-        last_post = datetime.fromisoformat(last_post_str)
-        schedule_dt = max(
-            datetime.now() + timedelta(minutes=20),
-            last_post + timedelta(hours=gap_hours),
-        )
-    else:
-        schedule_dt = datetime.now() + timedelta(hours=gap_hours)
-
-    ui_log(f"TikTok: scheduling at {schedule_dt.strftime('%Y-%m-%d %H:%M')} ...")
-
     page = chrome_client.new_page(CDP_URL)
     try:
+        drive.download_file(file_id, local_mp4)
+        ui_log(f"TikTok: downloaded '{name}'.")
+
+        folder_id = config["google_drive"]["tiktok_manual_folder_id"]
+        caption = _get_caption(drive, folder_id, name)
+        ui_log(f"TikTok: caption = {caption[:80]}{'...' if len(caption) > 80 else ''}")
+
+        gap_hours = config.get("tiktok", {}).get("post_interval_hours", 5)
+        last_post_str = db.last_tiktok_scheduled_time()
+        if last_post_str:
+            last_post = datetime.fromisoformat(last_post_str)
+            schedule_dt = max(
+                datetime.now() + timedelta(minutes=20),
+                last_post + timedelta(hours=gap_hours),
+            )
+        else:
+            schedule_dt = datetime.now() + timedelta(hours=gap_hours)
+
+        ui_log(f"TikTok: scheduling at {schedule_dt.strftime('%Y-%m-%d %H:%M')} ...")
         _tiktok_upload(page, local_mp4, caption, schedule_dt, ui_log)
+        db.mark_tiktok_scheduled(file_id, name, schedule_dt.isoformat())
+        ui_log(f"TikTok: '{name}' scheduled.")
     finally:
         page.close()
-
-    db.mark_tiktok_scheduled(file_id, name, schedule_dt.isoformat())
-    os.remove(local_mp4)
-    ui_log(f"TikTok: '{name}' scheduled.")
+        try:
+            os.remove(local_mp4)
+        except FileNotFoundError:
+            pass
 
 
 def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
@@ -242,9 +243,13 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         raise TimeoutError("TikTok upload did not finish within 5 minutes.")
 
     # ── Caption ───────────────────────────────────────────────────────────────
+    # TikTok's editor is a Slate/Draft.js contenteditable div.
+    # .fill() silently does nothing on rich text editors — use keyboard
+    # shortcuts to select-all + delete existing text, then type the caption.
     ui_log("TikTok: filling caption ...")
     _safe_click(page, caption_field, ui_log, "caption_field")
-    caption_field.fill("")
+    caption_field.press("Control+a")
+    caption_field.press("Delete")
     page.keyboard.type(caption[:2200])
     time.sleep(1)
 
@@ -260,11 +265,15 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     date_input = frame.locator("input[type='date'], input[placeholder*='date']").first
     if date_input.is_visible():
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
+        date_input.dispatch_event("input")
+        date_input.dispatch_event("change")
         time.sleep(0.5)
 
     time_input = frame.locator("input[type='time'], input[placeholder*='time']").first
     if time_input.is_visible():
         time_input.fill(schedule_dt.strftime("%H:%M"))
+        time_input.dispatch_event("input")
+        time_input.dispatch_event("change")
         time.sleep(0.5)
 
     # ── Submit ────────────────────────────────────────────────────────────────

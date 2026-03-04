@@ -126,11 +126,17 @@ def increment_quota() -> int:
 # ── TikTok posts ──────────────────────────────────────────────────────────────
 
 def is_tiktok_processed(file_id: str) -> bool:
+    """Return True if this file was scheduled OR has already failed.
+
+    Failed videos are NOT retried automatically — they stay blocked until
+    the row is deleted from tiktok_posts, preventing duplicate uploads when
+    a partial failure leaves a video on TikTok without a DB record.
+    """
     with _conn() as con:
         row = con.execute(
             "SELECT status FROM tiktok_posts WHERE file_id=?", (file_id,)
         ).fetchone()
-    return row is not None and row["status"] == "scheduled"
+    return row is not None and row["status"] in ("scheduled", "failed")
 
 
 def mark_tiktok_scheduled(file_id: str, file_name: str, scheduled_time: str) -> None:
