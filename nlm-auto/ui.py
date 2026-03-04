@@ -4,16 +4,21 @@ import queue
 import threading
 import time
 import gradio as gr
+import db
 
 _log_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
 _MAX_LINES = 500
 
 
+_ERROR_KEYWORDS = ("error", "failed", "warning", "warn", "rate-limit", "unavailable")
+
+
 def ui_log(message: str) -> None:
     """Called from watcher threads to append a timestamped log line."""
     ts = time.strftime("%H:%M:%S")
-    line = f"[{ts}] {message}"
+    prefix = ">>> " if any(k in message.lower() for k in _ERROR_KEYWORDS) else "    "
+    line = f"[{ts}] {prefix}{message}"
     _log_queue.put(line)
 
 
@@ -27,7 +32,16 @@ def _drain_queue():
 
 def _get_log_text() -> str:
     _drain_queue()
-    return "\n".join(_log_lines) if _log_lines else "(waiting for activity...)"
+    if not _log_lines:
+        return "(waiting for activity...)"
+    return "\n".join(reversed(_log_lines))  # newest at top
+
+
+def _reset_failed_videos() -> str:
+    count = db.reset_tiktok_failed()
+    msg = f"Reset {count} failed video(s) — they will be retried on the next poll."
+    ui_log(msg)
+    return msg
 
 
 def build_ui() -> gr.Blocks:
@@ -35,7 +49,7 @@ def build_ui() -> gr.Blocks:
         gr.Markdown("## TikTok Automation App — M0rty Unredacted\nDrive → TikTok Studio scheduler")
 
         log_box = gr.Textbox(
-            label="Live Status Log",
+            label="Live Status Log  (newest first — >>> = error/warning)",
             value=_get_log_text,
             lines=30,
             max_lines=30,
@@ -43,8 +57,15 @@ def build_ui() -> gr.Blocks:
             every=5,  # refresh every 5 seconds
         )
 
+        with gr.Row():
+            reset_btn = gr.Button("Reset Failed Videos", variant="secondary")
+            reset_out = gr.Textbox(label="", interactive=False, scale=3)
+        reset_btn.click(_reset_failed_videos, outputs=reset_out)
+
         gr.Markdown(
-            "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos_"
+            "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos._  \n"
+            "_>>> prefix = error or warning.  Click **Reset Failed Videos** to unblock "
+            "videos stuck as 'failed' so they retry on the next poll._"
         )
 
     return demo

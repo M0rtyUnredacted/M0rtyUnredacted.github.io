@@ -19,6 +19,11 @@ from drive_client import DriveClient
 
 log = logging.getLogger(__name__)
 
+
+class TiktokRateLimitError(RuntimeError):
+    """TikTok is throttling uploads (/upload/unavailable).  Transient — do NOT
+    mark the video as permanently failed; it will be retried on the next poll."""
+
 TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
 CDP_URL = "http://127.0.0.1:9222"
 TIKTOK_STUDIO_URL = "https://www.tiktok.com/tiktokstudio/upload"
@@ -36,16 +41,24 @@ def run(config: dict, ui_log):
         ui_log("TikTok Scheduler: no new videos.")
         return
 
-    ui_log(f"TikTok Scheduler: {len(new_mp4s)} new video(s) to schedule.")
     new_mp4s.sort(key=lambda f: f.get("modifiedTime", ""))
+    pending = len(new_mp4s)
+    ui_log(f"TikTok Scheduler: {pending} video(s) pending — processing 1 this run.")
 
-    for mp4 in new_mp4s:
-        try:
-            _process_video(mp4, config, drive, ui_log)
-        except Exception as exc:
-            log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
-            db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
-            raise RuntimeError(f"TikTok failed on '{mp4['name']}': {exc}") from exc
+    # Process ONE video per poll cycle.  TikTok rate-limits back-to-back
+    # uploads; the remainder are handled on the next 10-minute poll.
+    mp4 = new_mp4s[0]
+    try:
+        _process_video(mp4, config, drive, ui_log)
+    except TiktokRateLimitError as exc:
+        # Transient — TikTok is throttling.  Don't permanently fail the video.
+        ui_log(f"TikTok: rate-limited on '{mp4['name']}' — will retry next poll.")
+        log.warning("TikTok rate limit on '%s': %s", mp4["name"], exc)
+        raise RuntimeError(f"TikTok rate-limited: {exc}") from exc
+    except Exception as exc:
+        log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
+        db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
+        raise RuntimeError(f"TikTok failed on '{mp4['name']}': {exc}") from exc
 
 
 def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
@@ -171,6 +184,12 @@ def _wait_for_upload_frame(page, timeout_ms: int = 30_000):
     """
     deadline = time.time() + timeout_ms / 1000
     while time.time() < deadline:
+        current_url = page.url
+        if "/unavailable" in current_url:
+            raise TiktokRateLimitError(
+                f"TikTok redirected to {current_url} — upload rate limit in effect. "
+                "Wait a few minutes before the next upload."
+            )
         for frame in page.frames:
             try:
                 if frame.locator("input[type='file']").count() > 0:
@@ -193,6 +212,10 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     frame = _wait_for_upload_frame(page, timeout_ms=30_000)
     if frame is None:
         current = page.url
+        if "/unavailable" in current:
+            raise TiktokRateLimitError(
+                f"TikTok upload unavailable ({current}) — rate limit in effect."
+            )
         if "/login" in current or "/passport" in current:
             _screenshot_on_fail(page, "login_redirect")
             raise RuntimeError(
@@ -268,6 +291,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         date_input.dispatch_event("input")
         date_input.dispatch_event("change")
         time.sleep(0.5)
+    else:
+        ui_log("TikTok: WARNING — date picker not found; schedule date may not be set.")
 
     time_input = frame.locator("input[type='time'], input[placeholder*='time']").first
     if time_input.is_visible():
@@ -275,6 +300,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         time_input.dispatch_event("input")
         time_input.dispatch_event("change")
         time.sleep(0.5)
+    else:
+        ui_log("TikTok: WARNING — time picker not found; schedule time may not be set.")
 
     # ── Submit ────────────────────────────────────────────────────────────────
     post_btn = frame.locator(

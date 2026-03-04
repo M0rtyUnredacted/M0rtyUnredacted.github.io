@@ -159,6 +159,16 @@ def mark_tiktok_failed(file_id: str, file_name: str, error_msg: str) -> None:
         )
 
 
+def reset_tiktok_failed() -> int:
+    """Delete all 'failed' tiktok_posts rows so they are retried on next poll.
+
+    Returns the number of rows deleted.
+    """
+    with _conn() as con:
+        cur = con.execute("DELETE FROM tiktok_posts WHERE status='failed'")
+    return cur.rowcount
+
+
 def last_tiktok_scheduled_time() -> str | None:
     """Return ISO datetime string of the most recently scheduled TikTok post."""
     with _conn() as con:
