@@ -100,7 +100,7 @@ def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
 
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
     ui_log("TikTok: navigating to Studio ...")
-    page.goto(TIKTOK_STUDIO_URL, wait_until="networkidle", timeout=60_000)
+    page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
     time.sleep(3)
 
     # ── Upload ────────────────────────────────────────────────────────────────
