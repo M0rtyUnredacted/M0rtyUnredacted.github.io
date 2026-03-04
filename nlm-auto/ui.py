@@ -44,6 +44,13 @@ def _reset_failed_videos() -> str:
     return msg
 
 
+def _reset_all_videos() -> str:
+    count = db.reset_tiktok_all()
+    msg = f"Reset ALL {count} video record(s) — every Drive video will be re-processed on the next poll."
+    ui_log(msg)
+    return msg
+
+
 def build_ui() -> gr.Blocks:
     with gr.Blocks(title="TikTok Auto — M0rty Unredacted", theme=gr.themes.Soft()) as demo:
         gr.Markdown("## TikTok Automation App — M0rty Unredacted\nDrive → TikTok Studio scheduler")
@@ -59,8 +66,10 @@ def build_ui() -> gr.Blocks:
 
         with gr.Row():
             reset_btn = gr.Button("Reset Failed Videos", variant="secondary")
+            reset_all_btn = gr.Button("Reset ALL Videos", variant="stop")
             reset_out = gr.Textbox(label="", interactive=False, scale=3)
         reset_btn.click(_reset_failed_videos, outputs=reset_out)
+        reset_all_btn.click(_reset_all_videos, outputs=reset_out)
 
         gr.Markdown(
             "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos._  \n"

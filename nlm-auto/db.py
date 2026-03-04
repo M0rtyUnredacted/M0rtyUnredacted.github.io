@@ -169,6 +169,18 @@ def reset_tiktok_failed() -> int:
     return cur.rowcount
 
 
+def reset_tiktok_all() -> int:
+    """Delete ALL tiktok_posts rows (scheduled + failed) so every Drive video
+    is treated as new on the next poll.  Use when TikTok posts are confirmed
+    not actually scheduled/live and the DB state needs a full reset.
+
+    Returns the number of rows deleted.
+    """
+    with _conn() as con:
+        cur = con.execute("DELETE FROM tiktok_posts")
+    return cur.rowcount
+
+
 def last_tiktok_scheduled_time() -> str | None:
     """Return ISO datetime string of the most recently scheduled TikTok post."""
     with _conn() as con:
