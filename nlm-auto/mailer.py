@@ -16,18 +16,19 @@ def send_failure(config: dict, subject: str, exc: Exception) -> None:
     address = notif.get("email", "")
     password = notif.get("gmail_app_password", "").replace(" ", "")
 
-    if not address or not password or "xxxx" in password:
-        log.warning("Gmail not configured — skipping failure email.")
+    if not address or not password or len(password) < 8 \
+            or "xxxx" in password.lower() or "YOUR" in password or "FILL" in password:
+        log.debug("Gmail not configured — skipping failure email.")
         return
 
     body = (
-        f"NLM Automation App encountered an error.\n\n"
+        f"TikTok Automation App encountered an error.\n\n"
         f"Subject: {subject}\n\n"
         f"Error: {exc}\n\n"
         f"Traceback:\n{traceback.format_exc()}"
     )
     msg = MIMEText(body)
-    msg["Subject"] = f"[NLM-Auto] FAILURE: {subject}"
+    msg["Subject"] = f"[TikTok-Auto] FAILURE: {subject}"
     msg["From"] = address
     msg["To"] = address
 
