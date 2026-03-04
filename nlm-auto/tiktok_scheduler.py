@@ -43,22 +43,28 @@ def run(config: dict, ui_log):
 
     new_mp4s.sort(key=lambda f: f.get("modifiedTime", ""))
     pending = len(new_mp4s)
-    ui_log(f"TikTok Scheduler: {pending} video(s) pending — processing 1 this run.")
+    ui_log(f"TikTok Scheduler: {pending} video(s) pending.")
 
-    # Process ONE video per poll cycle.  TikTok rate-limits back-to-back
-    # uploads; the remainder are handled on the next 10-minute poll.
-    mp4 = new_mp4s[0]
-    try:
-        _process_video(mp4, config, drive, ui_log)
-    except TiktokRateLimitError as exc:
-        # Transient — TikTok is throttling.  Don't permanently fail the video.
-        ui_log(f"TikTok: rate-limited on '{mp4['name']}' — will retry next poll.")
-        log.warning("TikTok rate limit on '%s': %s", mp4["name"], exc)
-        raise RuntimeError(f"TikTok rate-limited: {exc}") from exc
-    except Exception as exc:
-        log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
-        db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
-        raise RuntimeError(f"TikTok failed on '{mp4['name']}': {exc}") from exc
+    # Process all queued videos, but pause 30 s between uploads so TikTok's
+    # server has time to finish processing the previous post (instant tab
+    # reopening triggers /upload/unavailable even without a hard rate limit).
+    INTER_UPLOAD_PAUSE = 30  # seconds
+
+    for i, mp4 in enumerate(new_mp4s):
+        if i > 0:
+            ui_log(f"TikTok: pausing {INTER_UPLOAD_PAUSE}s before next upload ...")
+            time.sleep(INTER_UPLOAD_PAUSE)
+        try:
+            _process_video(mp4, config, drive, ui_log)
+        except TiktokRateLimitError as exc:
+            # Transient — TikTok is throttling.  Don't permanently fail the video.
+            ui_log(f"TikTok: rate-limited on '{mp4['name']}' — will retry next poll.")
+            log.warning("TikTok rate limit on '%s': %s", mp4["name"], exc)
+            raise RuntimeError(f"TikTok rate-limited: {exc}") from exc
+        except Exception as exc:
+            log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
+            db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
+            raise RuntimeError(f"TikTok failed on '{mp4['name']}': {exc}") from exc
 
 
 def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
