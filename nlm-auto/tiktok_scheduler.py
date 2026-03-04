@@ -98,10 +98,48 @@ def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
     return f"#{stem.replace(' ', '')} #MortyUnredacted"
 
 
+def _dismiss_joyride(page) -> None:
+    """Dismiss TikTok's react-joyride onboarding overlay if it appears."""
+    overlay_sel = "[data-test-id='overlay'], .react-joyride__overlay"
+    try:
+        page.wait_for_selector(overlay_sel, timeout=4_000)
+    except Exception:
+        return  # no overlay — nothing to do
+
+    # Try keyboard dismiss first
+    page.keyboard.press("Escape")
+    time.sleep(0.5)
+
+    # Try visible skip/close buttons
+    for btn_sel in (
+        "button:has-text('Skip')",
+        "button:has-text('Got it')",
+        "button:has-text('Done')",
+        "[aria-label='Close']",
+        "button[class*='close']",
+    ):
+        try:
+            btn = page.locator(btn_sel).first
+            if btn.is_visible():
+                btn.click(force=True)
+                time.sleep(0.5)
+                break
+        except Exception:
+            continue
+
+    # Nuclear fallback: remove the portal node from the DOM entirely
+    if page.locator(overlay_sel).is_visible():
+        page.evaluate(
+            "() => { const el = document.getElementById('react-joyride-portal'); "
+            "if (el) el.remove(); }"
+        )
+
+
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
     time.sleep(3)
+    _dismiss_joyride(page)
 
     # ── Upload ────────────────────────────────────────────────────────────────
     # TikTok Studio shows a file-picker popup when the upload area is clicked.
