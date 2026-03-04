@@ -115,7 +115,48 @@ def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
                 return drive.read_plain_text(f["id"])
             except Exception as exc:
                 log.warning("Could not read sidecar %s: %s", f["name"], exc)
-    return f"#{stem.replace(' ', '')} #MortyUnredacted"
+    return _caption_from_filename(stem)
+
+
+def _caption_from_filename(stem: str) -> str:
+    """Generate a readable caption + 5 hashtags from a filename stem.
+
+    Rules to stay TikTok TOS-safe:
+    - No misleading claims, no banned/restricted topic tags
+    - Hashtags are derived from the filename words plus safe engagement tags
+    """
+    import re
+
+    # Strip leading date prefixes: 2024-01-15_, 20240115_
+    cleaned = re.sub(r"^(\d{4}[-_]\d{2}[-_]\d{2}[-_]?|\d{8}[-_]?)", "", stem)
+    # Replace separators with spaces, collapse whitespace
+    cleaned = re.sub(r"[_\-]+", " ", cleaned).strip()
+    title = cleaned.title() if cleaned else stem
+
+    # Extract meaningful words (>3 chars, not stop-words) for topic hashtags
+    _STOP = {"a", "an", "the", "and", "or", "but", "in", "on", "at",
+             "to", "for", "of", "with", "is", "are", "was", "were", "be",
+             "this", "that", "from", "its", "it"}
+    words = [
+        w for w in re.findall(r"[A-Za-z]+", cleaned)
+        if len(w) > 3 and w.lower() not in _STOP
+    ]
+
+    # Up to 3 topic hashtags from filename, then fill with safe baseline tags
+    topic_tags = [f"#{w.capitalize()}" for w in words[:3]]
+    baseline_tags = ["#MortyUnredacted", "#FYP", "#ForYouPage"]
+    seen: set[str] = set()
+    all_tags: list[str] = []
+    for tag in topic_tags + baseline_tags:
+        if tag.lower() not in seen:
+            seen.add(tag.lower())
+            all_tags.append(tag)
+        if len(all_tags) == 5:
+            break
+
+    caption = f"{title}\n\n{' '.join(all_tags)}"
+    log.debug("Generated caption from filename '%s': %s", stem, caption)
+    return caption
 
 
 def _dismiss_joyride(page) -> None:
