@@ -135,10 +135,59 @@ def _dismiss_joyride(page) -> None:
         )
 
 
+def _safe_click(page, locator, ui_log, label: str, timeout: int = 10_000):
+    """Click a locator; if an overlay intercepts, retry with force=True."""
+    try:
+        locator.click(timeout=timeout)
+    except Exception as exc:
+        if "intercepts pointer events" in str(exc):
+            ui_log(f"TikTok: overlay blocked '{label}' — using force click")
+            _dismiss_joyride(page)
+            locator.click(force=True, timeout=timeout)
+        else:
+            raise
+
+
+def _screenshot_on_fail(page, label: str) -> str | None:
+    """Save a screenshot to temp/ and return the path (or None)."""
+    try:
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = os.path.join(TEMP_DIR, f"fail_{label}_{ts}.png")
+        os.makedirs(TEMP_DIR, exist_ok=True)
+        page.screenshot(path=path, full_page=True)
+        log.info("Failure screenshot saved: %s", path)
+        return path
+    except Exception:
+        return None
+
+
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
-    time.sleep(3)
+
+    # Wait for the upload UI to actually render instead of a blind sleep
+    try:
+        page.wait_for_selector(
+            "input[type='file'], button:has-text('Select files'), "
+            "button:has-text('Upload'), div[class*='upload']",
+            timeout=15_000,
+        )
+    except Exception:
+        # Check if we got redirected to a login page
+        current = page.url
+        if "/login" in current or "/passport" in current:
+            _screenshot_on_fail(page, "login_redirect")
+            raise RuntimeError(
+                f"TikTok redirected to login ({current}). "
+                "Your session may have expired — log in to TikTok in Chrome "
+                "and restart the app."
+            )
+        _screenshot_on_fail(page, "upload_ui_missing")
+        raise RuntimeError(
+            f"Upload UI did not appear within 15 s (url={current}). "
+            "Check the screenshot in temp/ for details."
+        )
+
     _dismiss_joyride(page)
 
     # ── Upload ────────────────────────────────────────────────────────────────
@@ -176,11 +225,12 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             break
         time.sleep(3)
     else:
+        _screenshot_on_fail(page, "upload_timeout")
         raise TimeoutError("TikTok upload did not finish within 5 minutes.")
 
     # ── Caption ───────────────────────────────────────────────────────────────
     ui_log("TikTok: filling caption ...")
-    caption_field.click()
+    _safe_click(page, caption_field, ui_log, "caption_field")
     caption_field.fill("")
     page.keyboard.type(caption[:2200])
     time.sleep(1)
@@ -191,7 +241,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "label:has-text('Schedule'), input[value='schedule'], [aria-label*='Schedule']"
     ).first
     if schedule_toggle.is_visible():
-        schedule_toggle.click()
+        _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
         time.sleep(1)
 
     date_input = page.locator("input[type='date'], input[placeholder*='date']").first
@@ -209,12 +259,12 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "button:has-text('Schedule'), button:has-text('Post'), button:has-text('Submit')"
     ).last
     post_btn.wait_for(timeout=10_000)
-    post_btn.click()
+    _safe_click(page, post_btn, ui_log, "post_button")
     time.sleep(3)
 
     confirm = page.locator("button:has-text('Confirm'), button:has-text('OK')").first
     if confirm.is_visible():
-        confirm.click()
+        _safe_click(page, confirm, ui_log, "confirm_button")
         time.sleep(2)
 
     ui_log("TikTok: post scheduled.")

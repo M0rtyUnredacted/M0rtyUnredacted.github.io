@@ -50,8 +50,19 @@ def _connect_cdp_with_retry(cdp_url: str = CDP_URL) -> Browser:
 
 
 def get_browser(cdp_url: str = CDP_URL) -> Browser:
-    """Return a (cached) Playwright browser connected via CDP."""
+    """Return a (cached) Playwright browser connected via CDP.
+
+    If the previous connection went stale (Chrome restarted, etc.)
+    we transparently reconnect instead of failing forever.
+    """
     global _browser
+    if _browser is not None:
+        try:
+            # Quick liveness check — will throw if CDP link is dead
+            _browser.contexts
+        except Exception:
+            log.warning("CDP connection stale — reconnecting ...")
+            _browser = None
     if _browser is None:
         _browser = _connect_cdp_with_retry(cdp_url)
     return _browser
