@@ -273,9 +273,17 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     # ── Caption ───────────────────────────────────────────────────────────────
     # TikTok's editor is a Slate/Draft.js contenteditable div.
-    # .fill() silently does nothing on rich text editors — use keyboard
-    # shortcuts to select-all + delete existing text, then type the caption.
+    # Re-query fresh (don't reuse the loop reference — TikTok may have
+    # re-rendered after upload finished, leaving the old locator stale).
+    # Small pause first to let the post-upload UI finish settling.
+    time.sleep(2)
+    caption_field = frame.locator(
+        "[data-text='true'], [contenteditable='true'][class*='caption'], "
+        "textarea[placeholder*='caption'], textarea[placeholder*='Caption'], "
+        "div[class*='editor'][contenteditable='true']"
+    ).first
     ui_log("TikTok: filling caption ...")
+    _screenshot_on_fail(page, "before_caption")  # diagnostic: see the page state
     _safe_click(page, caption_field, ui_log, "caption_field")
     caption_field.press("Control+a")
     caption_field.press("Delete")
