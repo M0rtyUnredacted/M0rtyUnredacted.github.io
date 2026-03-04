@@ -159,6 +159,50 @@ def _caption_from_filename(stem: str) -> str:
     return caption
 
 
+def _dismiss_draft_recovery(page, ui_log) -> None:
+    """Dismiss TikTok's 'A video you were editing wasn't saved' dialog.
+
+    This appears when a previous session was killed mid-upload/edit.
+    We always discard the draft so the upload flow starts fresh.
+    Looking ahead: after clicking Discard, TikTok briefly re-renders —
+    callers should wait ~1s before continuing.
+    """
+    # Detect the dialog by its distinctive text
+    dialog_sel = (
+        "div:has-text('wasn\\'t saved'), "
+        "div:has-text('Continue editing'), "
+        "[class*='modal']:has-text('editing')"
+    )
+    try:
+        page.wait_for_selector(dialog_sel, timeout=4_000)
+    except Exception:
+        return  # no draft recovery dialog — nothing to do
+
+    ui_log("TikTok: draft recovery dialog detected — discarding draft ...")
+    # Prefer Discard/Leave/No so we start with a clean upload form
+    for btn_text in ("Discard", "Leave", "No", "Cancel"):
+        try:
+            btn = page.locator(f"button:has-text('{btn_text}')").first
+            if btn.is_visible(timeout=1_000):
+                btn.click()
+                time.sleep(1.5)  # wait for TikTok to re-render upload page
+                ui_log("TikTok: draft discarded.")
+                return
+        except Exception:
+            continue
+
+    # Fallback: if only "Continue editing" is visible, click it so we're not
+    # stuck — the upload loop will handle the already-loaded editor state.
+    try:
+        btn = page.locator("button:has-text('Continue')").first
+        if btn.is_visible(timeout=1_000):
+            ui_log("TikTok: resuming existing draft (no Discard button found).")
+            btn.click()
+            time.sleep(1.5)
+    except Exception:
+        pass
+
+
 def _dismiss_joyride(page) -> None:
     """Dismiss TikTok's react-joyride onboarding overlay if it appears."""
     overlay_sel = "[data-test-id='overlay'], .react-joyride__overlay"
@@ -252,6 +296,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
     _dismiss_joyride(page)
+    _dismiss_draft_recovery(page, ui_log)  # handles "wasn't saved" dialog
 
     # TikTok Studio loads the upload form inside an iframe.
     # Scan all frames (main + iframes) for the file input element.
@@ -301,8 +346,13 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     deadline = time.time() + 300
     while time.time() < deadline:
         caption_field = frame.locator(
-            "[data-text='true'], [contenteditable='true'][class*='caption'], "
-            "textarea[placeholder*='caption'], textarea[placeholder*='Caption'], "
+            # Most specific first: placeholder text on the caption div
+            "div[contenteditable='true'][data-placeholder*='caption' i], "
+            "div[contenteditable='true'][data-placeholder*='describe' i], "
+            # Class-based fallbacks
+            "[contenteditable='true'][class*='caption'], "
+            "textarea[placeholder*='caption' i], "
+            # Broadest last — only reached if nothing above matches
             "div[class*='editor'][contenteditable='true']"
         ).first
         if caption_field.is_visible():
