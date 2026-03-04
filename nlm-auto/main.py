@@ -2,6 +2,7 @@
 
 import json
 import logging
+import logging.handlers
 import os
 import signal
 import sys
@@ -15,12 +16,31 @@ import tiktok_scheduler
 import ui as ui_module
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
-    datefmt="%H:%M:%S",
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "app.log")
+
+_fmt = logging.Formatter(
+    fmt="%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Console handler
+_console = logging.StreamHandler()
+_console.setFormatter(_fmt)
+
+# File handler — rotates at 1 MB, keeps 3 backups
+_file = logging.handlers.RotatingFileHandler(
+    LOG_PATH, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+)
+_file.setFormatter(_fmt)
+
+logging.basicConfig(level=logging.INFO, handlers=[_console, _file])
 log = logging.getLogger("main")
+
+
+def _log_unhandled(exc_type, exc_value, exc_tb):
+    log.critical("Unhandled exception", exc_info=(exc_type, exc_value, exc_tb))
+
+sys.excepthook = _log_unhandled
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 
@@ -31,12 +51,9 @@ def load_config() -> dict:
 
     errors = []
     gd = cfg.get("google_drive", {})
-    notif = cfg.get("notifications", {})
 
     if "FILL_IN" in gd.get("tiktok_manual_folder_id", "FILL_IN"):
         errors.append("google_drive.tiktok_manual_folder_id")
-    if "xxxx" in notif.get("gmail_app_password", "xxxx"):
-        errors.append("notifications.gmail_app_password")
 
     if errors:
         sys.exit(
@@ -61,6 +78,7 @@ def make_tiktok_job(config: dict):
 
 def main():
     log.info("TikTok Automation App starting ...")
+    log.info("Log file: %s", LOG_PATH)
 
     config = load_config()
     log.info("Config loaded.")
