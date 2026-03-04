@@ -159,48 +159,70 @@ def _caption_from_filename(stem: str) -> str:
     return caption
 
 
-def _dismiss_draft_recovery(page, ui_log) -> None:
-    """Dismiss TikTok's 'A video you were editing wasn't saved' dialog.
-
-    This appears when a previous session was killed mid-upload/edit.
-    We always discard the draft so the upload flow starts fresh.
-    Looking ahead: after clicking Discard, TikTok briefly re-renders —
-    callers should wait ~1s before continuing.
-    """
-    # Detect the dialog by its distinctive text
-    dialog_sel = (
-        "div:has-text('wasn\\'t saved'), "
-        "div:has-text('Continue editing'), "
-        "[class*='modal']:has-text('editing')"
-    )
-    try:
-        page.wait_for_selector(dialog_sel, timeout=4_000)
-    except Exception:
-        return  # no draft recovery dialog — nothing to do
-
-    ui_log("TikTok: draft recovery dialog detected — discarding draft ...")
-    # Prefer Discard/Leave/No so we start with a clean upload form
-    for btn_text in ("Discard", "Leave", "No", "Cancel"):
+def _click_discard_btn(page, ui_log, label: str) -> bool:
+    """Click a Discard/Leave button if visible. Returns True if clicked."""
+    for btn_text in ("Discard", "Leave", "Delete", "Remove"):
         try:
             btn = page.locator(f"button:has-text('{btn_text}')").first
-            if btn.is_visible(timeout=1_000):
+            if btn.is_visible(timeout=1_500):
+                ui_log(f"TikTok: clicking '{btn_text}' ({label})")
                 btn.click()
-                time.sleep(1.5)  # wait for TikTok to re-render upload page
-                ui_log("TikTok: draft discarded.")
-                return
+                time.sleep(1.5)
+                return True
         except Exception:
             continue
+    return False
 
-    # Fallback: if only "Continue editing" is visible, click it so we're not
-    # stuck — the upload loop will handle the already-loaded editor state.
+
+def _dismiss_draft_recovery(page, ui_log) -> None:
+    """Dismiss all draft/discard dialogs TikTok may show after a killed session.
+
+    TikTok can show up to TWO layered dialogs:
+      1. 'A video you were editing wasn't saved. Continue editing?'
+         or 'You have an unfinished post' — with Continue / Discard
+      2. 'Discard this post? Your video ... will be discarded permanently.'
+         — confirmation modal with  Not now / Discard
+
+    Both must be handled.  We also handle the case where only dialog 2
+    is shown (TikTok sometimes skips step 1 and goes straight to confirm).
+
+    Looking ahead at additional states:
+    - 'Not now' on dialog 2 keeps the draft; we must NOT click it.
+    - After both dismissals TikTok briefly re-renders; we add settle waits.
+    - The dialogs live on the main page, NOT inside the upload iframe.
+    - button:has-text() matches even when the button label is CSS-truncated.
+    """
+    # ── Broad detection: any of the known dialog variants ─────────────────────
+    dialog_sel = (
+        "div:has-text('Discard this post'), "           # confirmation dialog
+        "div:has-text('wasn\\'t saved'), "              # variant A
+        "div:has-text('unfinished post'), "             # variant B
+        "div:has-text('Continue editing'), "            # variant C
+        "[class*='modal']:has-text('discard'), "        # generic modal
+        "[class*='dialog']:has-text('discard')"
+    )
     try:
-        btn = page.locator("button:has-text('Continue')").first
-        if btn.is_visible(timeout=1_000):
-            ui_log("TikTok: resuming existing draft (no Discard button found).")
-            btn.click()
-            time.sleep(1.5)
+        page.wait_for_selector(dialog_sel, timeout=5_000)
     except Exception:
-        pass
+        return  # no draft dialog present — nothing to do
+
+    ui_log("TikTok: draft dialog detected — discarding ...")
+
+    # Pass 1 — handle 'Continue editing?' or 'unfinished post' prompt.
+    # These have a Discard button that triggers the confirmation dialog.
+    _click_discard_btn(page, ui_log, "draft-recovery prompt")
+
+    # Pass 2 — handle 'Discard this post?' confirmation (always present,
+    # sometimes the only dialog shown).
+    try:
+        page.wait_for_selector("div:has-text('Discard this post')", timeout=4_000)
+        _click_discard_btn(page, ui_log, "discard-confirmation")
+    except Exception:
+        pass  # confirmation didn't appear — already gone after pass 1
+
+    # Settle wait: TikTok re-renders the upload form after final discard
+    time.sleep(2)
+    ui_log("TikTok: draft discarded, upload form should be fresh.")
 
 
 def _dismiss_joyride(page) -> None:
@@ -292,6 +314,48 @@ def _wait_for_upload_frame(page, timeout_ms: int = 30_000):
     return None
 
 
+def _dismiss_advisory_dialogs(page, frame, ui_log) -> None:
+    """Dismiss TikTok advisory/warning dialogs that appear after video upload.
+
+    Known dialogs (any can appear, any can be absent):
+    - Copyright / music warning   → Close / Got it / OK
+    - Age-restriction notice      → Continue / OK
+    - Auto-caption offer          → Close / No thanks
+    - 'Some features unavailable' → Close / OK
+    - 'Processing may take time'  → OK / Continue
+
+    Strategy: scan for visible modal-like containers and click any
+    dismiss button inside them.  Repeat up to 5 times so stacked dialogs
+    all get cleared.  If nothing is visible after a short wait, return.
+    """
+    dismiss_btns = (
+        "button:has-text('Close')",
+        "button:has-text('Got it')",
+        "button:has-text('OK')",
+        "button:has-text('Continue')",
+        "button:has-text('No thanks')",
+        "button:has-text('Dismiss')",
+        "[aria-label='Close']",
+    )
+    for _attempt in range(5):
+        found_any = False
+        for sel in dismiss_btns:
+            try:
+                # Check both the main page and the upload iframe
+                for ctx in (page, frame):
+                    btn = ctx.locator(sel).first
+                    if btn.is_visible(timeout=800):
+                        ui_log(f"TikTok: dismissing advisory dialog ({sel}) ...")
+                        btn.click()
+                        time.sleep(0.8)
+                        found_any = True
+                        break
+            except Exception:
+                continue
+        if not found_any:
+            break  # no more visible dialogs
+
+
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
@@ -362,6 +426,13 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         _screenshot_on_fail(page, "upload_timeout")
         raise TimeoutError("TikTok upload did not finish within 5 minutes.")
 
+    # ── Post-upload dialogs ───────────────────────────────────────────────────
+    # TikTok may show advisory dialogs immediately after a video finishes
+    # processing: copyright/music warnings, age-restriction notices, auto-
+    # caption confirmation, "some features unavailable" banners, etc.
+    # Dismiss them all before touching the caption field.
+    _dismiss_advisory_dialogs(page, frame, ui_log)
+
     # ── Caption ───────────────────────────────────────────────────────────────
     # TikTok's editor is a Slate/Draft.js contenteditable div.
     # Re-query fresh (don't reuse the loop reference — TikTok may have
@@ -369,8 +440,13 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # Small pause first to let the post-upload UI finish settling.
     time.sleep(2)
     caption_field = frame.locator(
-        "[data-text='true'], [contenteditable='true'][class*='caption'], "
-        "textarea[placeholder*='caption'], textarea[placeholder*='Caption'], "
+        # Most specific first: placeholder text on the caption div
+        "div[contenteditable='true'][data-placeholder*='caption' i], "
+        "div[contenteditable='true'][data-placeholder*='describe' i], "
+        # Class-based fallbacks
+        "[contenteditable='true'][class*='caption'], "
+        "textarea[placeholder*='caption' i], "
+        # Broadest last — only reached if nothing above matches
         "div[class*='editor'][contenteditable='true']"
     ).first
     ui_log("TikTok: filling caption ...")
@@ -407,9 +483,18 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             "TikTok may have changed their UI — selectors need updating."
         )
 
-    date_input = frame.locator("input[type='date'], input[placeholder*='date']").first
+    # TikTok uses custom React date pickers — they sometimes render as
+    # native inputs, sometimes as styled divs.  Try native fill first,
+    # then fall back to click-and-type.
+    date_input = frame.locator(
+        "input[type='date'], "
+        "input[placeholder*='date' i], "
+        "input[class*='date' i], "
+        "input[class*='Date']"
+    ).first
     try:
         date_input.wait_for(state="visible", timeout=5_000)
+        date_input.click()
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
         date_input.dispatch_event("input")
         date_input.dispatch_event("change")
@@ -421,9 +506,15 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             "Check temp/fail_date_picker_missing_*.png."
         )
 
-    time_input = frame.locator("input[type='time'], input[placeholder*='time']").first
+    time_input = frame.locator(
+        "input[type='time'], "
+        "input[placeholder*='time' i], "
+        "input[class*='time' i], "
+        "input[class*='Time']"
+    ).first
     try:
         time_input.wait_for(state="visible", timeout=5_000)
+        time_input.click()
         time_input.fill(schedule_dt.strftime("%H:%M"))
         time_input.dispatch_event("input")
         time_input.dispatch_event("change")
