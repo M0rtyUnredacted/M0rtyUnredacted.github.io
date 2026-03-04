@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
 CDP_URL = "http://127.0.0.1:9222"
-TIKTOK_STUDIO_URL = "https://www.tiktok.com/creator-center/upload"
+TIKTOK_STUDIO_URL = "https://www.tiktok.com/tiktokstudio/upload"
 
 
 def run(config: dict, ui_log):
@@ -161,19 +161,36 @@ def _screenshot_on_fail(page, label: str) -> str | None:
         return None
 
 
+def _wait_for_upload_frame(page, timeout_ms: int = 30_000):
+    """Find the frame (main page or iframe) that contains the upload file input.
+
+    TikTok Studio embeds the upload form inside an iframe on current versions.
+    Searches page.frames every second until input[type='file'] is found or
+    the timeout expires.  Returns the Frame object, or None on timeout.
+    """
+    deadline = time.time() + timeout_ms / 1000
+    while time.time() < deadline:
+        for frame in page.frames:
+            try:
+                if frame.locator("input[type='file']").count() > 0:
+                    log.debug("Upload file input found in frame: %s", frame.url)
+                    return frame
+            except Exception:
+                continue
+        time.sleep(1)
+    return None
+
+
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
+    _dismiss_joyride(page)
 
-    # Wait for the upload UI to actually render instead of a blind sleep
-    try:
-        page.wait_for_selector(
-            "input[type='file'], button:has-text('Select files'), "
-            "button:has-text('Upload'), div[class*='upload']",
-            timeout=15_000,
-        )
-    except Exception:
-        # Check if we got redirected to a login page
+    # TikTok Studio loads the upload form inside an iframe.
+    # Scan all frames (main + iframes) for the file input element.
+    ui_log("TikTok: waiting for upload UI ...")
+    frame = _wait_for_upload_frame(page, timeout_ms=30_000)
+    if frame is None:
         current = page.url
         if "/login" in current or "/passport" in current:
             _screenshot_on_fail(page, "login_redirect")
@@ -184,22 +201,18 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             )
         _screenshot_on_fail(page, "upload_ui_missing")
         raise RuntimeError(
-            f"Upload UI did not appear within 15 s (url={current}). "
-            "Check the screenshot in temp/ for details."
+            f"Upload file input not found in any frame within 30 s "
+            f"(url={current}). Check temp/fail_upload_ui_missing_*.png."
         )
 
-    _dismiss_joyride(page)
-
     # ── Upload ────────────────────────────────────────────────────────────────
-    # TikTok Studio shows a file-picker popup when the upload area is clicked.
-    # expect_file_chooser intercepts it at the browser level whether it is a
-    # hidden <input type="file"> or a JS-triggered native dialog.
+    # expect_file_chooser is a browser-level hook — works even when the click
+    # originates inside an iframe.
     ui_log("TikTok: triggering file upload ...")
     try:
         with page.expect_file_chooser(timeout=20_000) as fc_info:
-            page.locator(
+            frame.locator(
                 "button:has-text('Select files'), "
-                "button:has-text('Upload'), "
                 "div[class*='upload-btn'], "
                 "div[class*='upload-card'], "
                 "label[class*='upload'], "
@@ -209,14 +222,14 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     except Exception:
         # Fallback: set files directly on the hidden file input
         ui_log("TikTok: file-chooser intercept failed, trying direct input ...")
-        upload_input = page.locator("input[type='file']").first
+        upload_input = frame.locator("input[type='file']").first
         upload_input.wait_for(state="attached", timeout=10_000)
         upload_input.set_input_files(mp4_path)
 
     ui_log("TikTok: waiting for upload to complete ...")
     deadline = time.time() + 300
     while time.time() < deadline:
-        caption_field = page.locator(
+        caption_field = frame.locator(
             "[data-text='true'], [contenteditable='true'][class*='caption'], "
             "textarea[placeholder*='caption'], textarea[placeholder*='Caption'], "
             "div[class*='editor'][contenteditable='true']"
@@ -237,32 +250,32 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
-    schedule_toggle = page.locator(
+    schedule_toggle = frame.locator(
         "label:has-text('Schedule'), input[value='schedule'], [aria-label*='Schedule']"
     ).first
     if schedule_toggle.is_visible():
         _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
         time.sleep(1)
 
-    date_input = page.locator("input[type='date'], input[placeholder*='date']").first
+    date_input = frame.locator("input[type='date'], input[placeholder*='date']").first
     if date_input.is_visible():
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
         time.sleep(0.5)
 
-    time_input = page.locator("input[type='time'], input[placeholder*='time']").first
+    time_input = frame.locator("input[type='time'], input[placeholder*='time']").first
     if time_input.is_visible():
         time_input.fill(schedule_dt.strftime("%H:%M"))
         time.sleep(0.5)
 
     # ── Submit ────────────────────────────────────────────────────────────────
-    post_btn = page.locator(
+    post_btn = frame.locator(
         "button:has-text('Schedule'), button:has-text('Post'), button:has-text('Submit')"
     ).last
     post_btn.wait_for(timeout=10_000)
     _safe_click(page, post_btn, ui_log, "post_button")
     time.sleep(3)
 
-    confirm = page.locator("button:has-text('Confirm'), button:has-text('OK')").first
+    confirm = frame.locator("button:has-text('Confirm'), button:has-text('OK')").first
     if confirm.is_visible():
         _safe_click(page, confirm, ui_log, "confirm_button")
         time.sleep(2)
