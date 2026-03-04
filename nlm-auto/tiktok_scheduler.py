@@ -333,36 +333,72 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
+    _screenshot_on_fail(page, "before_schedule")  # diagnostic: see schedule UI state
+
+    # TikTok Studio uses a radio-button / switch group to pick "Schedule" vs
+    # "Publish now".  Try a broad set of selectors covering known UI variants.
     schedule_toggle = frame.locator(
-        "label:has-text('Schedule'), input[value='schedule'], [aria-label*='Schedule']"
+        "label:has-text('Schedule'), "
+        "input[value='schedule'], "
+        "[aria-label*='Schedule'], "
+        "div[class*='schedule']:has-text('Schedule'), "
+        "span:has-text('Schedule')"
     ).first
-    if schedule_toggle.is_visible():
+
+    try:
+        schedule_toggle.wait_for(state="visible", timeout=8_000)
         _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
         time.sleep(1)
+    except Exception:
+        _screenshot_on_fail(page, "schedule_toggle_missing")
+        raise RuntimeError(
+            "TikTok schedule toggle not found. "
+            "Check temp/fail_schedule_toggle_missing_*.png to see the page state. "
+            "TikTok may have changed their UI — selectors need updating."
+        )
 
     date_input = frame.locator("input[type='date'], input[placeholder*='date']").first
-    if date_input.is_visible():
+    try:
+        date_input.wait_for(state="visible", timeout=5_000)
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
         date_input.dispatch_event("input")
         date_input.dispatch_event("change")
         time.sleep(0.5)
-    else:
-        ui_log("TikTok: WARNING — date picker not found; schedule date may not be set.")
+    except Exception:
+        _screenshot_on_fail(page, "date_picker_missing")
+        raise RuntimeError(
+            "TikTok date picker not found after enabling schedule toggle. "
+            "Check temp/fail_date_picker_missing_*.png."
+        )
 
     time_input = frame.locator("input[type='time'], input[placeholder*='time']").first
-    if time_input.is_visible():
+    try:
+        time_input.wait_for(state="visible", timeout=5_000)
         time_input.fill(schedule_dt.strftime("%H:%M"))
         time_input.dispatch_event("input")
         time_input.dispatch_event("change")
         time.sleep(0.5)
-    else:
-        ui_log("TikTok: WARNING — time picker not found; schedule time may not be set.")
+    except Exception:
+        _screenshot_on_fail(page, "time_picker_missing")
+        raise RuntimeError(
+            "TikTok time picker not found after enabling schedule toggle. "
+            "Check temp/fail_time_picker_missing_*.png."
+        )
 
     # ── Submit ────────────────────────────────────────────────────────────────
+    # Only look for a Schedule/Submit button — NOT "Post", to avoid accidentally
+    # publishing immediately if the schedule toggle failed to activate.
     post_btn = frame.locator(
-        "button:has-text('Schedule'), button:has-text('Post'), button:has-text('Submit')"
+        "button:has-text('Schedule'), button:has-text('Submit')"
     ).last
-    post_btn.wait_for(timeout=10_000)
+    try:
+        post_btn.wait_for(state="visible", timeout=10_000)
+    except Exception:
+        _screenshot_on_fail(page, "submit_btn_missing")
+        raise RuntimeError(
+            "TikTok 'Schedule'/'Submit' button not found. "
+            "Check temp/fail_submit_btn_missing_*.png."
+        )
     _safe_click(page, post_btn, ui_log, "post_button")
     time.sleep(3)
 
