@@ -71,12 +71,10 @@ if not exist "%APP_DIR%\.deps_installed" (
 :: to IPv6 (::1) but Chrome binds on IPv4 only.
 :: -----------------------------------------------------------------
 
-:: Read profile path from config.json
-for /f "delims=" %%P in ('python -c "import json,os; c=json.load(open('config.json')); p=c.get('notebooklm',{}).get('chrome_profile_path',''); ud=os.path.dirname(p) if p else os.path.join(os.environ.get('LOCALAPPDATA',''),chr(71)+'oogle',chr(67)+'hrome','User Data'); pd=os.path.basename(p) if p else 'Default'; print(ud+'|'+pd)" 2^>nul') do set CHROME_INFO=%%P
-for /f "tokens=1 delims=|" %%A in ("%CHROME_INFO%") do set CHROME_USER_DATA=%%A
-for /f "tokens=2 delims=|" %%B in ("%CHROME_INFO%") do set CHROME_PROFILE=%%B
-if "%CHROME_USER_DATA%"=="" set CHROME_USER_DATA=%LOCALAPPDATA%\Google\Chrome\User Data
-if "%CHROME_PROFILE%"=="" set CHROME_PROFILE=Default
+:: Use a dedicated debug profile so the app never conflicts with your normal Chrome.
+:: On first run Chrome will open empty -- log into TikTok once; credentials are saved.
+set CHROME_USER_DATA=%APP_DIR%\chrome_debug
+set CHROME_PROFILE=Default
 
 echo Checking Chrome debug port 9222 ...
 powershell -NoProfile -Command ^
@@ -105,6 +103,10 @@ if errorlevel 1 (
         --no-default-browser-check
 
     :: Wait up to 15s for Chrome to bind the port
+    if not exist "%CHROME_USER_DATA%\Default" (
+        echo   NOTE: First run -- Chrome will open with a fresh profile.
+        echo   Log into TikTok in that window, then re-run run.bat.
+    )
     echo Waiting for Chrome to bind port 9222 ...
     set /a tries=0
     :wait_loop
@@ -128,7 +130,7 @@ if errorlevel 1 (
 :: 6. Launch app
 :: -----------------------------------------------------------------
 echo.
-echo Starting NLM Automation App ...
+echo Starting TikTok Automation App ...
 echo Gradio UI -> http://localhost:7860
 echo.
 python main.py

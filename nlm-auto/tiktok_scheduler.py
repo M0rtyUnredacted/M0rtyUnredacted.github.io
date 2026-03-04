@@ -104,10 +104,27 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     time.sleep(3)
 
     # ── Upload ────────────────────────────────────────────────────────────────
-    ui_log("TikTok: uploading video ...")
-    upload_input = page.locator("input[type='file']").first
-    upload_input.wait_for(timeout=20_000)
-    upload_input.set_input_files(mp4_path)
+    # TikTok Studio shows a file-picker popup when the upload area is clicked.
+    # expect_file_chooser intercepts it at the browser level whether it is a
+    # hidden <input type="file"> or a JS-triggered native dialog.
+    ui_log("TikTok: triggering file upload ...")
+    try:
+        with page.expect_file_chooser(timeout=20_000) as fc_info:
+            page.locator(
+                "button:has-text('Select files'), "
+                "button:has-text('Upload'), "
+                "div[class*='upload-btn'], "
+                "div[class*='upload-card'], "
+                "label[class*='upload'], "
+                "input[type='file']"
+            ).first.click()
+        fc_info.value.set_files(mp4_path)
+    except Exception:
+        # Fallback: set files directly on the hidden file input
+        ui_log("TikTok: file-chooser intercept failed, trying direct input ...")
+        upload_input = page.locator("input[type='file']").first
+        upload_input.wait_for(state="attached", timeout=10_000)
+        upload_input.set_input_files(mp4_path)
 
     ui_log("TikTok: waiting for upload to complete ...")
     deadline = time.time() + 300

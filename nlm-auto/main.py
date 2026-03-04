@@ -1,4 +1,4 @@
-"""NLM Automation App — entry point."""
+"""TikTok Automation App — entry point."""
 
 import json
 import logging
@@ -11,7 +11,6 @@ import schedule
 
 import chrome_client
 import mailer
-import nlm_watcher
 import tiktok_scheduler
 import ui as ui_module
 
@@ -32,15 +31,10 @@ def load_config() -> dict:
 
     errors = []
     gd = cfg.get("google_drive", {})
-    nlm = cfg.get("notebooklm", {})
     notif = cfg.get("notifications", {})
 
-    if "FILL_IN" in gd.get("query_docs_folder_id", "FILL_IN"):
-        errors.append("google_drive.query_docs_folder_id")
     if "FILL_IN" in gd.get("tiktok_manual_folder_id", "FILL_IN"):
         errors.append("google_drive.tiktok_manual_folder_id")
-    if "FILL_IN" in nlm.get("notebook_url", "FILL_IN"):
-        errors.append("notebooklm.notebook_url")
     if "xxxx" in notif.get("gmail_app_password", "xxxx"):
         errors.append("notifications.gmail_app_password")
 
@@ -51,18 +45,6 @@ def load_config() -> dict:
             + f"\n\nFile: {CONFIG_PATH}"
         )
     return cfg
-
-
-def make_nlm_job(config: dict):
-    def job():
-        ui_module.ui_log("NLM Watcher: running ...")
-        try:
-            nlm_watcher.run(config, ui_module.ui_log)
-        except Exception as exc:
-            log.exception("NLM Watcher error")
-            ui_module.ui_log(f"NLM ERROR: {exc}")
-            mailer.send_failure(config, "NLM Watcher", exc)
-    return job
 
 
 def make_tiktok_job(config: dict):
@@ -78,34 +60,24 @@ def make_tiktok_job(config: dict):
 
 
 def main():
-    log.info("NLM Automation App starting ...")
+    log.info("TikTok Automation App starting ...")
 
     config = load_config()
     log.info("Config loaded.")
 
-    # Start Gradio UI
     ui_module.launch()
     time.sleep(2)
 
-    nlm_minutes = config.get("google_drive", {}).get("poll_interval_minutes", 15)
-    tiktok_minutes = 10  # TikTok always checks every 10 min
-
-    nlm_job = make_nlm_job(config)
+    poll_minutes = config.get("tiktok", {}).get("poll_interval_minutes", 10)
     tiktok_job = make_tiktok_job(config)
 
-    schedule.every(nlm_minutes).minutes.do(nlm_job)
-    schedule.every(tiktok_minutes).minutes.do(tiktok_job)
+    schedule.every(poll_minutes).minutes.do(tiktok_job)
 
-    ui_module.ui_log(
-        f"Scheduler started — NLM every {nlm_minutes} min, TikTok every {tiktok_minutes} min."
-    )
+    ui_module.ui_log(f"Scheduler started — TikTok check every {poll_minutes} min.")
 
-    # Run both jobs immediately on startup so we don't wait for the first interval
-    ui_module.ui_log("Running initial checks ...")
-    nlm_job()
+    ui_module.ui_log("Running initial check ...")
     tiktok_job()
 
-    # Graceful shutdown
     def _shutdown(sig, frame):
         ui_module.ui_log("Shutting down ...")
         chrome_client.close_all()

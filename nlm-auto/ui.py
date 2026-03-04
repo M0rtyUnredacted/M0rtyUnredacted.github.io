@@ -31,8 +31,8 @@ def _get_log_text() -> str:
 
 
 def build_ui() -> gr.Blocks:
-    with gr.Blocks(title="NLM Auto — M0rty Unredacted", theme=gr.themes.Soft()) as demo:
-        gr.Markdown("## NLM Automation App — M0rty Unredacted\nDrive → NotebookLM → TikTok pipeline")
+    with gr.Blocks(title="TikTok Auto — M0rty Unredacted", theme=gr.themes.Soft()) as demo:
+        gr.Markdown("## TikTok Automation App — M0rty Unredacted\nDrive → TikTok Studio scheduler")
 
         log_box = gr.Textbox(
             label="Live Status Log",
@@ -44,7 +44,7 @@ def build_ui() -> gr.Blocks:
         )
 
         gr.Markdown(
-            "_NLM Watcher runs every 15 min · TikTok Scheduler runs every 10 min_"
+            "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos_"
         )
 
     return demo

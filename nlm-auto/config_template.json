@@ -1,33 +1,18 @@
 {
-  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for a full walkthrough.",
-  "_chrome_profile_path_help": "Press Win+R, type %LOCALAPPDATA%\\Google\\Chrome\\User Data\\ and hit Enter. The folder named Default (or Profile 1) is your profile. Use the full path, e.g. C:\\Users\\YourName\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
+  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for details.",
 
   "google_drive": {
-    "query_docs_folder_id":  "FILL_IN_your_Drive_query_docs_folder_id",
-    "tiktok_manual_folder_id": "FILL_IN_your_Drive_TikTok_folder_id",
-    "poll_interval_minutes": 15
-  },
-
-  "notebooklm": {
-    "notebook_url": "https://notebooklm.google.com/notebook/FILL_IN_your_notebook_id",
-    "chrome_profile_path": "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
-    "style_doc_id": "FILL_IN_optional_style_google_doc_id_or_leave_empty"
+    "tiktok_manual_folder_id": "FILL_IN_your_Drive_TikTok_folder_id"
   },
 
   "tiktok": {
     "post_interval_hours": 5,
-    "chrome_profile_path": "C:\\Users\\YOUR_USERNAME\\AppData\\Local\\Google\\Chrome\\User Data\\Default"
+    "poll_interval_minutes": 10
   },
 
   "notifications": {
     "email": "you@gmail.com",
     "notify_on_failure": true,
     "gmail_app_password": "xxxx xxxx xxxx xxxx"
-  },
-
-  "daily_quota": {
-    "max_nlm_videos_per_day": 6
-  },
-
-  "downloads_dir": "C:\\nlm_app\\downloads"
+  }
 }
