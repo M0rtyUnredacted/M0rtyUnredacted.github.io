@@ -556,38 +556,39 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     ui_log("TikTok: waiting for upload to complete ...")
     deadline = time.time() + 600   # 10 minutes — large videos need more time
     _last_diag = time.time()
+    # Check both the upload iframe and the main page — the description editor
+    # lives in whichever context the full upload form is rendered in.
     while time.time() < deadline:
-        caption_field = frame.locator(_caption_sel).first
-        try:
-            if caption_field.is_visible():
-                break
-            # Every 60 s log a brief diagnostic so we can see what IS visible
-            if time.time() - _last_diag >= 60:
-                _last_diag = time.time()
-                elapsed = int(time.time() - (deadline - 600))
-                try:
-                    # Count any contenteditable elements (signals caption ready)
-                    ce_count = frame.locator("[contenteditable='true']").count()
-                    # Check if upload progress indicator is still present
-                    prog = frame.locator(
-                        "[class*='progress'], [class*='uploading'], "
-                        "[aria-label*='upload' i][role='progressbar']"
-                    ).count()
-                    ui_log(
-                        f"TikTok: still waiting … {elapsed}s elapsed, "
-                        f"contenteditable={ce_count}, progress-els={prog}"
-                    )
-                except Exception:
-                    ui_log(f"TikTok: still waiting … {elapsed}s elapsed")
-        except Exception as _exc:
-            if "closed" in str(_exc).lower() or "TargetClosed" in type(_exc).__name__:
-                _screenshot_on_fail(page, "frame_closed_during_upload")
-                raise RuntimeError(
-                    "TikTok upload iframe was closed while waiting for the upload to finish. "
-                    "This usually means an undismissed dialog navigated the page away. "
-                    "Check temp/fail_frame_closed_*.png for the page state."
-                ) from _exc
-            raise
+        # Try frame first (most common), then main page as fallback
+        caption_field = None
+        for _ctx in (frame, page):
+            try:
+                _el = _ctx.locator(_caption_sel).first
+                if _el.is_visible(timeout=300):
+                    caption_field = _el
+                    break
+            except Exception:
+                continue
+
+        if caption_field is not None:
+            break
+
+        # Every 60 s log a brief diagnostic so we can see what IS visible
+        if time.time() - _last_diag >= 60:
+            _last_diag = time.time()
+            elapsed = int(time.time() - (deadline - 600))
+            try:
+                ce_count = frame.locator("[contenteditable='true']").count()
+                prog = frame.locator(
+                    "[class*='progress'], [class*='uploading'], "
+                    "[aria-label*='upload' i][role='progressbar']"
+                ).count()
+                ui_log(
+                    f"TikTok: still waiting … {elapsed}s elapsed, "
+                    f"contenteditable={ce_count}, progress-els={prog}"
+                )
+            except Exception:
+                ui_log(f"TikTok: still waiting … {elapsed}s elapsed")
         time.sleep(3)
     else:
         _screenshot_on_fail(page, "upload_timeout")
@@ -613,8 +614,19 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # Final sweep: dismiss any TUXModal that appeared during video processing.
     # This is the most common cause of "intercepts pointer events" on the caption.
     _dismiss_any_tux_modal(page, ui_log)
-    # Re-query using the same broad selector set used in the wait loop.
-    caption_field = frame.locator(_caption_sel).first
+    # Re-query using the same multi-context search used in the wait loop.
+    caption_field = None
+    for _ctx in (frame, page):
+        try:
+            _el = _ctx.locator(_caption_sel).first
+            if _el.is_visible(timeout=1_000):
+                caption_field = _el
+                break
+        except Exception:
+            continue
+    if caption_field is None:
+        _screenshot_on_fail(page, "caption_field_gone")
+        raise RuntimeError("Caption field disappeared after upload completed.")
     ui_log("TikTok: filling caption ...")
     _screenshot_on_fail(page, "before_caption")  # diagnostic: always saved for review
     _safe_click(page, caption_field, ui_log, "caption_field")
@@ -631,29 +643,68 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
-    _screenshot_on_fail(page, "before_schedule")  # diagnostic: see schedule UI state
+    _screenshot_on_fail(page, "before_schedule")
 
-    # TikTok Studio uses a radio-button / switch group to pick "Schedule" vs
-    # "Publish now".  Try a broad set of selectors covering known UI variants.
-    schedule_toggle = frame.locator(
-        "label:has-text('Schedule'), "
-        "input[value='schedule'], "
-        "[aria-label*='Schedule'], "
-        "div[class*='schedule']:has-text('Schedule'), "
-        "span:has-text('Schedule')"
-    ).first
+    # IMPORTANT: From UI inspection, the "When to post: Now / Schedule" radio
+    # group is on the MAIN PAGE — NOT inside the upload iframe.
+    # The iframe only contains the file-input drop zone.
+    # Search page first; fall back to frame in case TikTok changes this.
+    _TOGGLE_SELS = (
+        "input[type='radio'][value='schedule']",
+        "label:has-text('Schedule')",
+        "[data-e2e*='schedule' i]",
+        "[aria-label='Schedule']",
+        # Scoped to the "When to post" section to avoid false matches
+        "div:has-text('When to post') ~ div input[type='radio']:nth-child(2)",
+    )
+    schedule_toggle = None
+    for ctx in (page, frame):
+        for sel in _TOGGLE_SELS:
+            try:
+                el = ctx.locator(sel).first
+                if el.is_visible(timeout=1_200):
+                    schedule_toggle = el
+                    break
+            except Exception:
+                continue
+        if schedule_toggle:
+            break
 
-    try:
-        schedule_toggle.wait_for(state="visible", timeout=8_000)
-        _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
-        time.sleep(2)  # React re-renders the date/time section after toggle
-    except Exception:
+    if schedule_toggle is None:
         _screenshot_on_fail(page, "schedule_toggle_missing")
         raise RuntimeError(
-            "TikTok schedule toggle not found. "
-            "Check temp/fail_schedule_toggle_missing_*.png to see the page state. "
-            "TikTok may have changed their UI — selectors need updating."
+            "TikTok 'Schedule' radio button not found on page or frame. "
+            "Check temp/fail_schedule_toggle_missing_*.png."
         )
+
+    _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
+    time.sleep(1.5)
+
+    # Verify the toggle actually activated (radio now checked).
+    # If it was a non-radio element we clicked (e.g. a span), try clicking
+    # the actual radio input directly as a fallback.
+    try:
+        if not schedule_toggle.is_checked():
+            ui_log("TikTok: toggle not checked after click — trying radio input directly ...")
+            for ctx in (page, frame):
+                for sel in ("input[type='radio'][value='schedule']",
+                            "input[type='radio']:last-of-type",
+                            "input[type='radio']:nth-of-type(2)"):
+                    try:
+                        r = ctx.locator(sel).first
+                        if r.is_visible(timeout=500):
+                            r.click(force=True)
+                            time.sleep(1)
+                            break
+                    except Exception:
+                        continue
+    except Exception:
+        pass  # is_checked() may throw if element isn't a radio — ignore
+
+    # Scroll down so the date/time section that appears below the radio group
+    # is in the viewport before we search for it.
+    page.evaluate("window.scrollBy(0, 500)")
+    time.sleep(1)
 
     # TikTok Studio uses a custom TUX React date/time picker — NOT a native
     # <input type="date|time">.  Selector strategy:
@@ -693,12 +744,14 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     )
 
     def _find_picker(contexts, sels, label):
-        """Search frame then page for the first visible picker input."""
+        """Search page then frame for the first visible picker input.
+        Page is searched first because the Settings section (including the
+        date/time picker) lives on the main page, not inside the upload iframe."""
         for ctx in contexts:
             for sel in sels:
                 try:
                     el = ctx.locator(sel).first
-                    if el.is_visible(timeout=800):
+                    if el.is_visible(timeout=1_500):
                         return el
                 except Exception:
                     continue
@@ -728,9 +781,9 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         log.info(msg)   # goes to app.log
         ui_log(msg)     # goes to Gradio UI
 
-    _contexts = [(frame, "frame"), (page, "page")]  # frame first; page as fallback
+    _contexts = [(page, "page"), (frame, "frame")]  # page first — form is on main page
 
-    date_input = _find_picker([frame, page], _DATE_SELS, "date")
+    date_input = _find_picker([page, frame], _DATE_SELS, "date")
     if date_input is None:
         _screenshot_on_fail(page, "date_picker_missing")
         _dump_inputs(_contexts, ui_log, "date_picker_missing")
@@ -758,7 +811,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         _screenshot_on_fail(page, "date_picker_fill_error")
         raise RuntimeError(f"TikTok date picker fill failed: {exc}") from exc
 
-    time_input = _find_picker([frame, page], _TIME_SELS, "time")
+    time_input = _find_picker([page, frame], _TIME_SELS, "time")
     if time_input is None:
         _screenshot_on_fail(page, "time_picker_missing")
         _dump_inputs(_contexts, ui_log, "time_picker_missing")
