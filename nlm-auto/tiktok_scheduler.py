@@ -695,29 +695,41 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             "Check temp/fail_schedule_toggle_missing_*.png."
         )
 
-    _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
-    time.sleep(1.5)
+    # ── Only activate Schedule if it isn't already active ────────────────────
+    # CRITICAL: clicking a radio that's already selected DESELECTS it in some
+    # TikTok UI builds, making the date/time fields disappear before we find
+    # them.  Check the underlying radio input first; only click if not checked.
+    _schedule_already_on = False
+    # Try to find the actual radio <input> to read its checked state,
+    # regardless of which element (label/div/span) schedule_toggle resolved to.
+    for _rctx in (page, frame):
+        try:
+            _radio = _rctx.locator("input[type='radio']").nth(1)  # 0=Now, 1=Schedule
+            if _radio.is_visible(timeout=500):
+                _schedule_already_on = _radio.is_checked()
+                break
+        except Exception:
+            pass
+    # Fallback: ask the element itself
+    if not _schedule_already_on:
+        try:
+            _schedule_already_on = schedule_toggle.is_checked()
+        except Exception:
+            pass
 
-    # Verify the toggle actually activated (radio now checked).
-    # If it was a non-radio element we clicked (e.g. a span), try clicking
-    # the actual radio input directly as a fallback.
-    try:
-        if not schedule_toggle.is_checked():
-            ui_log("TikTok: toggle not checked after click — trying radio input directly ...")
-            for ctx in (page, frame):
-                for sel in ("input[type='radio'][value='schedule']",
-                            "input[type='radio']:last-of-type",
-                            "input[type='radio']:nth-of-type(2)"):
-                    try:
-                        r = ctx.locator(sel).first
-                        if r.is_visible(timeout=500):
-                            r.click(force=True)
-                            time.sleep(1)
-                            break
-                    except Exception:
-                        continue
-    except Exception:
-        pass  # is_checked() may throw if element isn't a radio — ignore
+    if _schedule_already_on:
+        ui_log("TikTok: 'Schedule' already active — skipping toggle click.")
+    else:
+        _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
+        time.sleep(1.5)
+        # Verify it actually activated
+        try:
+            for _rctx in (page, frame):
+                _radio = _rctx.locator("input[type='radio']").nth(1)
+                if _radio.is_visible(timeout=300) and _radio.is_checked():
+                    break
+        except Exception:
+            pass
 
     # ── Scroll the inner form panel to reveal the date/time section ───────────
     # The upload form is inside a scrollable div panel, not the main window.
@@ -798,8 +810,13 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # or tabindex="0".  We try both input selectors (future-proofing) AND the
     # custom component patterns we know about.
     _DATE_SELS = (
-        # ── Native inputs (some TikTok versions) ──
+        # ── Native inputs — Chrome renders input[type=date] as a styled
+        #    dropdown with calendar icon + ▼ arrow, which is exactly what
+        #    screenshots show.  These MUST come first. ──
         "input[type='date']",
+        "input[type='datetime-local']",
+        "select[name*='date' i]",
+        "select[class*='date' i]",
         "input[placeholder*='mm/dd' i]",
         "input[placeholder*='yyyy' i]",
         "input[placeholder*='date' i]",
@@ -818,8 +835,10 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "[class*='schedule-time'] > *:first-child",
     )
     _TIME_SELS = (
-        # ── Native inputs ──
+        # ── Native inputs — Chrome renders input[type=time] as clock icon + ▼
         "input[type='time']",
+        "select[name*='time' i]",
+        "select[class*='time' i]",
         "input[placeholder*='hh:mm' i]",
         "input[placeholder*='time' i]",
         "[data-e2e*='time' i] input",
@@ -854,10 +873,29 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     def _fill_picker(el, val_iso: str, val_slash: str, val_hhmm: str,
                      val_ampm: str, label: str):
-        """Fill a date/time field.  Tries input fill, keyboard type, and
-        React-compatible event dispatch.  Works for both native inputs and
-        custom elements that become editable when focused."""
-        # Strategy A: native input fill
+        """Fill a date/time field.  Tries input fill, select_option, keyboard
+        type, and React event dispatch.  Works for native inputs, <select>
+        elements, and custom editable divs."""
+        # Strategy A: <select> element
+        try:
+            tag = el.evaluate("e => e.tagName")
+            if tag == "SELECT":
+                for v in (val_iso, val_hhmm, val_ampm, val_slash):
+                    if not v:
+                        continue
+                    try:
+                        el.select_option(value=v)
+                        return
+                    except Exception:
+                        pass
+                    try:
+                        el.select_option(label=v)
+                        return
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        # Strategy B: native input fill (input[type=date/time])
         try:
             el.click(click_count=3)
             el.fill(val_iso)
@@ -869,7 +907,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                 return
         except Exception:
             pass
-        # Strategy B: keyboard type (works for custom editable divs)
+        # Strategy C: keyboard type (works for custom editable divs)
         try:
             el.click(click_count=3)
             el.press("Control+a")
