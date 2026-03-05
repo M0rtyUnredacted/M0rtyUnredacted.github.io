@@ -353,18 +353,35 @@ def _dismiss_any_tux_modal(page, ui_log, allow_discard: bool = True) -> None:
 
 
 def _dismiss_joyride(page) -> None:
-    """Dismiss TikTok's react-joyride onboarding overlay if it appears."""
-    overlay_sel = "[data-test-id='overlay'], .react-joyride__overlay"
-    try:
-        page.wait_for_selector(overlay_sel, timeout=4_000)
-    except Exception:
-        return  # no overlay — nothing to do
+    """Dismiss TikTok's react-joyride onboarding overlay if it appears.
 
-    # Try keyboard dismiss first
+    Strategy order (fastest first):
+      1. Nuclear DOM removal — remove the portal node entirely (instant, reliable)
+      2. Keyboard Escape — catches any residual overlay
+      3. Button click — Skip/Got it/Done/Close
+    """
+    overlay_sel = "[data-test-id='overlay'], .react-joyride__overlay"
+
+    # Step 1: Always nuke the joyride portal from DOM first — most reliable
+    try:
+        page.evaluate(
+            "() => { const el = document.getElementById('react-joyride-portal'); "
+            "if (el) el.remove(); }"
+        )
+    except Exception:
+        pass
+
+    # Step 2: Check if overlay is still present
+    try:
+        page.wait_for_selector(overlay_sel, timeout=1_500)
+    except Exception:
+        return  # gone after DOM removal — done
+
+    # Step 3: Keyboard dismiss
     page.keyboard.press("Escape")
     time.sleep(0.5)
 
-    # Try visible skip/close buttons
+    # Step 4: Try visible skip/close buttons
     for btn_sel in (
         "button:has-text('Skip')",
         "button:has-text('Got it')",
@@ -381,12 +398,15 @@ def _dismiss_joyride(page) -> None:
         except Exception:
             continue
 
-    # Nuclear fallback: remove the portal node from the DOM entirely
-    if page.locator(overlay_sel).is_visible():
-        page.evaluate(
-            "() => { const el = document.getElementById('react-joyride-portal'); "
-            "if (el) el.remove(); }"
-        )
+    # Step 5: Last-resort DOM nuke (if buttons didn't work)
+    try:
+        if page.locator(overlay_sel).is_visible(timeout=500):
+            page.evaluate(
+                "() => { const el = document.getElementById('react-joyride-portal'); "
+                "if (el) el.remove(); }"
+            )
+    except Exception:
+        pass
 
 
 def _safe_click(page, locator, ui_log, label: str, timeout: int = 10_000):
@@ -744,8 +764,17 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         except Exception:
             pass
 
+    # ── Joyride nuke after toggle (belt + suspenders) ────────────────────────
+    # Toggle click sometimes re-triggers the joyride overlay in some TikTok builds.
+    _dismiss_joyride(page)
+
+    # ── Screenshot after toggle for diagnostics ──────────────────────────────
+    _screenshot_on_fail(page, "after_toggle_for_diag")
+
     # ── Scroll the inner form panel to reveal the date/time section ───────────
     # The upload form is inside a scrollable div panel, not the main window.
+    # CRITICAL: also scroll inside the upload iframe — date/time pickers render
+    # there in current TikTok Studio builds.
     # window.scrollBy() does nothing here — must scroll the panel itself.
     _scroll_result = page.evaluate("""() => {
         // 1. Try to scroll the schedule section into view within its container
@@ -774,6 +803,22 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         return scrolled > 0 ? ('scrolled-containers:' + scrolled) : 'no-scroll-needed';
     }""")
     ui_log(f"TikTok: form-scroll result: {_scroll_result}")
+
+    # Also scroll inside the upload iframe — TikTok renders the schedule
+    # section inside the iframe in current Studio builds.
+    for _scroll_frame in page.frames:
+        try:
+            _scroll_frame.evaluate("""() => {
+                document.querySelectorAll('*').forEach(el => {
+                    const s = window.getComputedStyle(el);
+                    if ((s.overflowY === 'auto' || s.overflowY === 'scroll')
+                            && el.scrollHeight > el.clientHeight + 50)
+                        el.scrollTop = el.scrollHeight;
+                });
+            }""")
+        except Exception:
+            pass
+
     time.sleep(1.2)
     # Wait up to 8 s for TikTok to render date/time pickers after toggle click.
     # TikTok's React app can take several seconds on slow connections.
