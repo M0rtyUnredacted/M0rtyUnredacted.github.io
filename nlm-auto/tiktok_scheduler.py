@@ -764,8 +764,10 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     time.sleep(1.2)
 
     # ── DOM dump helper ────────────────────────────────────────────────────────
-    # Dumps ALL interactive/relevant elements on screen so we know exactly
-    # what TikTok rendered for the date/time section.  Runs on every failure.
+    # Saves ALL interactive/relevant DOM elements to schedule_dom.log
+    # (always overwritten) so you can inspect it immediately after a failure.
+    _DOM_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "temp", "schedule_dom.log")
     def _dump_schedule_dom(label: str):
         try:
             els = page.evaluate("""() => {
@@ -780,96 +782,100 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                     const de2e = el.getAttribute('data-e2e') || '';
                     const tab  = el.getAttribute('tabindex') || '';
                     const al   = (el.getAttribute('aria-label') || '').slice(0, 35);
-                    const txt  = el.textContent?.trim().slice(0, 45) || '';
+                    const txt  = (el.innerText || el.textContent || '').trim().slice(0, 50);
                     const interesting = (
                         tag === 'INPUT' || tag === 'BUTTON' || tag === 'SELECT' ||
                         role === 'button' || role === 'combobox' || role === 'listbox' ||
                         role === 'radio'  || role === 'dialog'   || role === 'option' ||
-                        tab  === '0' ||
-                        de2e !== '' ||
-                        cls.match(/schedule|ScheduleTime|DateInput|TimeInput|
-                                   Picker|Calendar|picker|calendar|WhenToPost|
-                                   date-time|dateTime|DateTime/ix)
+                        tab === '0' || de2e !== '' ||
+                        /schedule|date|time|picker|calendar|when/i.test(cls)
                     );
                     if (interesting) rows.push(
                         `${tag}[r=${role||'-'}][t=${tab||'-'}][de2e=${de2e||'-'}]` +
-                        `[al=${al}] .${cls.slice(0,60)} | "${txt}"`
+                        `[al=${al}] .${cls.slice(0,70)} | "${txt}"`
                     );
                 });
-                return rows.slice(0, 100);
+                return rows.slice(0, 120);
             }""")
-            for line in els:
-                log.info("TikTok [%s] DOM: %s", label, line)
-            ui_log(f"TikTok [{label}]: {len(els)} DOM elements logged → see app.log")
+            with open(_DOM_LOG, "w", encoding="utf-8") as _f:
+                _f.write(f"=== schedule_dom.log [{label}] ===\n")
+                _f.write("\n".join(els))
+            ui_log(f"TikTok [{label}]: DOM dump → temp/schedule_dom.log ({len(els)} entries)")
         except Exception as _e:
             ui_log(f"TikTok [{label}] DOM dump failed: {_e}")
 
-    # ── Find date/time picker ─────────────────────────────────────────────────
-    # TikTok Studio uses CUSTOM TUX React components — there are NO <input>
-    # elements for date/time.  The pickers are divs/buttons with role="button"
-    # or tabindex="0".  We try both input selectors (future-proofing) AND the
-    # custom component patterns we know about.
+    # ── Find date/time pickers ────────────────────────────────────────────────
+    # PRIMARY strategy: scan ALL visible interactive elements and match by the
+    # date/time TEXT they display.  This works regardless of class names (which
+    # change with TikTok's CSS modules) or data-e2e attributes.
+    # TikTok pre-populates with current date (YYYY-MM-DD) and current+buffer
+    # time (HH:MM), so we can reliably match by those patterns.
+    import re as _re
+
+    def _find_picker_by_text(picker_type: str):
+        """Scan all interactive elements in page+frame, return the first one
+        whose inner text matches a time (HH:MM) or date (YYYY-MM-DD) pattern."""
+        if picker_type == "time":
+            _pat = _re.compile(r'^\d{1,2}:\d{2}(\s*(AM|PM))?$', _re.I)
+        else:
+            _pat = _re.compile(r'^\d{4}-\d{2}-\d{2}$|^\d{1,2}/\d{1,2}/\d{4}$')
+        _sel = ("button, select, [tabindex='0'], [role='button'], "
+                "[role='combobox'], input[type='time'], input[type='date'], "
+                "input[type='datetime-local']")
+        for _ctx in (page, frame):
+            try:
+                _els = _ctx.locator(_sel).all()
+                for _el in _els[:80]:
+                    try:
+                        if not _el.is_visible(timeout=150):
+                            continue
+                        _txt = _el.inner_text(timeout=200).strip()
+                        if _pat.match(_txt):
+                            return _el
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+        return None
+
+    # FALLBACK strategy: classic CSS-selector scan (catches native inputs,
+    # <select>s, and any TUX variants we've seen in past TikTok versions)
     _DATE_SELS = (
-        # ── Native inputs — Chrome renders input[type=date] as a styled
-        #    dropdown with calendar icon + ▼ arrow, which is exactly what
-        #    screenshots show.  These MUST come first. ──
-        "input[type='date']",
-        "input[type='datetime-local']",
-        "select[name*='date' i]",
-        "select[class*='date' i]",
-        "input[placeholder*='mm/dd' i]",
-        "input[placeholder*='yyyy' i]",
-        "input[placeholder*='date' i]",
-        "[data-e2e*='date' i] input",
-        # ── TUX custom date trigger (non-input) ──
-        "[data-e2e*='schedule-date' i]",
-        "[data-e2e*='date'][role='button']",
-        "[class*='TUXDateInput']",
-        "[class*='DateInput'][role='button']",
-        "[class*='DateInput'][tabindex='0']",
-        "[class*='date-input'][role='button']",
-        "[class*='DatePicker'][tabindex='0']",
-        "[class*='ScheduleDate']",
-        "[class*='schedule-date']",
+        "input[type='date']", "input[type='datetime-local']",
+        "select[name*='date' i]", "select[class*='date' i]",
+        "input[placeholder*='mm/dd' i]", "input[placeholder*='yyyy' i]",
+        "[data-e2e*='schedule-date' i]", "[data-e2e*='date'][role='button']",
+        "[class*='TUXDateInput']", "[class*='DateInput'][role='button']",
+        "[class*='DateInput'][tabindex='0']", "[class*='DatePicker'][tabindex='0']",
+        "[class*='ScheduleDate']", "[class*='schedule-date']",
         "[class*='ScheduleTime'] [role='button']:first-child",
-        "[class*='schedule-time'] > *:first-child",
     )
     _TIME_SELS = (
-        # ── Native inputs — Chrome renders input[type=time] as clock icon + ▼
         "input[type='time']",
-        "select[name*='time' i]",
-        "select[class*='time' i]",
+        "select[name*='time' i]", "select[class*='time' i]",
         "input[placeholder*='hh:mm' i]",
-        "input[placeholder*='time' i]",
-        "[data-e2e*='time' i] input",
-        # ── TUX custom time trigger ──
-        "[data-e2e*='schedule-time' i]",
-        "[data-e2e*='time'][role='button']",
-        "[class*='TUXTimeInput']",
-        "[class*='TimeInput'][role='button']",
-        "[class*='TimeInput'][tabindex='0']",
-        "[class*='time-input'][role='button']",
-        "[class*='TimePicker'][tabindex='0']",
+        "[data-e2e*='schedule-time' i]", "[data-e2e*='time'][role='button']",
+        "[class*='TUXTimeInput']", "[class*='TimeInput'][role='button']",
+        "[class*='TimeInput'][tabindex='0']", "[class*='TimePicker'][tabindex='0']",
         "[class*='ScheduleTime'] [role='button']:last-child",
-        "[class*='schedule-time'] > *:last-child",
     )
 
-    def _find_picker(sels: tuple, label: str):
-        """Search page then frame for the first visible/scrollable picker element."""
-        for ctx in (page, frame):
-            for sel in sels:
+    def _find_picker_by_sel(sels: tuple):
+        """Classic selector scan — page first, then frame."""
+        for _ctx in (page, frame):
+            for _sel in sels:
                 try:
-                    el = ctx.locator(sel).first
-                    # Scroll into view inside the inner panel before visibility check
+                    _el = _ctx.locator(_sel).first
                     try:
-                        el.scroll_into_view_if_needed(timeout=600)
+                        _el.scroll_into_view_if_needed(timeout=500)
                     except Exception:
                         pass
-                    if el.is_visible(timeout=1_200):
-                        return el
+                    if _el.is_visible(timeout=1_000):
+                        return _el
                 except Exception:
                     continue
         return None
+
 
     def _fill_picker(el, val_iso: str, val_slash: str, val_hhmm: str,
                      val_ampm: str, label: str):
@@ -992,7 +998,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         return False
 
     # ── Set date ──────────────────────────────────────────────────────────────
-    date_el = _find_picker(_DATE_SELS, "date")
+    # Try text-pattern scan first (class-name agnostic), then selector fallback
+    date_el = _find_picker_by_text("date") or _find_picker_by_sel(_DATE_SELS)
     if date_el is None:
         _screenshot_on_fail(page, "date_picker_missing")
         _dump_schedule_dom("date_picker_missing")
@@ -1012,7 +1019,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     time.sleep(0.5)
 
     # ── Set time ──────────────────────────────────────────────────────────────
-    time_el = _find_picker(_TIME_SELS, "time")
+    time_el = _find_picker_by_text("time") or _find_picker_by_sel(_TIME_SELS)
     if time_el is None:
         _screenshot_on_fail(page, "time_picker_missing")
         _dump_schedule_dom("time_picker_missing")
