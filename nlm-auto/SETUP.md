@@ -39,12 +39,13 @@ This guide walks you through setting up the NLM Automation App from scratch on a
 
 ## Step 2 — Google Drive Setup
 
-You need **two** Google Drive folders:
+You need **three** Google Drive folders:
 
 | Folder | Purpose |
 |---|---|
 | **Query Docs folder** | You drop `.gdoc` files here; the app picks them up and sends them to NotebookLM |
-| **TikTok Manual folder** | The app uploads finished `.mp4` files here for TikTok scheduling |
+| **TikTok Ready folder** | Drop `.mp4` files (+ matching `.md`/`.txt` caption sidecar) here — the app picks them up and schedules them on TikTok |
+| **TikTok Posted folder** | After a video is successfully scheduled, the app moves both the `.mp4` and its caption sidecar here automatically |
 
 **To create a folder and get its ID:**
 1. Go to [drive.google.com](https://drive.google.com) and create the folder.
@@ -115,7 +116,8 @@ Fill in every value:
 {
   "google_drive": {
     "query_docs_folder_id":  "paste-your-query-docs-folder-id-here",
-    "tiktok_manual_folder_id": "paste-your-tiktok-folder-id-here",
+    "tiktok_ready_folder_id":  "paste-your-tiktok-ready-folder-id-here",
+    "tiktok_posted_folder_id": "paste-your-tiktok-posted-folder-id-here",
     "poll_interval_minutes": 15
   },
 

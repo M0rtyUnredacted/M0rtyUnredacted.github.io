@@ -38,7 +38,7 @@ def run(config: dict, ui_log):
     db.init()
     drive = DriveClient()
 
-    folder_id = config["google_drive"]["tiktok_manual_folder_id"]
+    folder_id = config["google_drive"]["tiktok_ready_folder_id"]
     mp4s = drive.list_mp4s(folder_id)
     new_mp4s = [f for f in mp4s if not db.is_tiktok_processed(f["id"])]
 
@@ -87,8 +87,9 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
         drive.download_file(file_id, local_mp4)
         ui_log(f"TikTok: downloaded '{name}'.")
 
-        folder_id = config["google_drive"]["tiktok_manual_folder_id"]
-        caption = _get_caption(drive, folder_id, name)
+        ready_folder_id  = config["google_drive"]["tiktok_ready_folder_id"]
+        posted_folder_id = config["google_drive"]["tiktok_posted_folder_id"]
+        caption, sidecar_id = _get_caption(drive, ready_folder_id, name)
         ui_log(f"TikTok: caption = {caption[:80]}{'...' if len(caption) > 80 else ''}")
 
         gap_hours = config.get("tiktok", {}).get("post_interval_hours", 5)
@@ -118,6 +119,13 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
         _tiktok_upload(page, local_mp4, caption, schedule_dt, ui_log)
         db.mark_tiktok_scheduled(file_id, name, schedule_dt.isoformat())
         ui_log(f"TikTok: '{name}' scheduled.")
+
+        # Move video + sidecar to the Posted folder
+        drive.move_file(file_id, posted_folder_id)
+        ui_log(f"TikTok: moved '{name}' to Posted folder.")
+        if sidecar_id:
+            drive.move_file(sidecar_id, posted_folder_id)
+            ui_log(f"TikTok: moved sidecar for '{name}' to Posted folder.")
     finally:
         try:
             page.close()
@@ -129,16 +137,20 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
             pass
 
 
-def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> str:
-    """Priority: sidecar .md > sidecar .txt > filename-based fallback."""
+def _get_caption(drive: DriveClient, folder_id: str, mp4_name: str) -> tuple[str, str | None]:
+    """Priority: sidecar .md > sidecar .txt > filename-based fallback.
+
+    Returns (caption_text, sidecar_file_id).  sidecar_file_id is None when
+    falling back to the filename-generated caption.
+    """
     stem = os.path.splitext(mp4_name)[0]
     for f in drive.list_files(folder_id):
         if f["name"] in (stem + ".md", stem + ".txt"):
             try:
-                return drive.read_plain_text(f["id"])
+                return drive.read_plain_text(f["id"]), f["id"]
             except Exception as exc:
                 log.warning("Could not read sidecar %s: %s", f["name"], exc)
-    return _caption_from_filename(stem)
+    return _caption_from_filename(stem), None
 
 
 def _caption_from_filename(stem: str) -> str:

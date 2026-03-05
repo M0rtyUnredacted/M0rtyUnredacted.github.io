@@ -68,8 +68,11 @@ def load_config() -> dict:
     errors = []
     gd = cfg.get("google_drive", {})
 
-    if "FILL_IN" in gd.get("tiktok_manual_folder_id", "FILL_IN"):
-        errors.append("google_drive.tiktok_manual_folder_id")
+    if "FILL_IN" in gd.get("tiktok_ready_folder_id", "FILL_IN"):
+        errors.append("google_drive.tiktok_ready_folder_id")
+
+    if "FILL_IN" in gd.get("tiktok_posted_folder_id", "FILL_IN"):
+        errors.append("google_drive.tiktok_posted_folder_id")
 
     if errors:
         sys.exit(
