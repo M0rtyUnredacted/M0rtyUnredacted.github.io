@@ -80,9 +80,22 @@ def load_config() -> dict:
     return cfg
 
 
-def make_tiktok_job(config: dict):
+def make_tiktok_job():
+    """Return a job function that reloads config.json on every run.
+
+    Reloading on each invocation means changing tiktok_manual_folder_id
+    (or any other config value) in config.json takes effect on the very
+    next poll — no restart required.
+    """
     def job():
         ui_module.ui_log("TikTok Scheduler: running ...")
+        try:
+            config = load_config()
+        except SystemExit as exc:
+            ui_module.ui_log(f"TikTok ERROR: config problem — {exc}")
+            log.error("Config reload failed: %s", exc)
+            _write_recent_log()
+            return
         try:
             tiktok_scheduler.run(config, ui_module.ui_log)
         except Exception as exc:
@@ -101,12 +114,11 @@ def main():
     config = load_config()
     log.info("Config loaded.")
 
-    ui_module.launch()
+    tiktok_job = make_tiktok_job()
+    ui_module.launch(run_now_fn=tiktok_job)
     time.sleep(2)
 
     poll_minutes = config.get("tiktok", {}).get("poll_interval_minutes", 10)
-    tiktok_job = make_tiktok_job(config)
-
     schedule.every(poll_minutes).minutes.do(tiktok_job)
 
     ui_module.ui_log(f"Scheduler started — TikTok check every {poll_minutes} min.")

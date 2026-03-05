@@ -4,8 +4,11 @@ import os
 import queue
 import threading
 import time
+from typing import Callable
 import gradio as gr
 import db
+
+_run_now_fn: Callable | None = None
 
 _log_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
@@ -54,6 +57,14 @@ def _get_log_text() -> str:
     return "\n".join(reversed(_log_lines))
 
 
+def _run_now() -> str:
+    if _run_now_fn is None:
+        return "Run Now callback not registered."
+    t = threading.Thread(target=_run_now_fn, daemon=True)
+    t.start()
+    return "Job triggered — check log for progress."
+
+
 def _reset_failed_videos() -> str:
     count = db.reset_tiktok_failed()
     msg = f"Reset {count} failed video(s) — they will be retried on the next poll."
@@ -92,23 +103,27 @@ def build_ui() -> gr.Blocks:
         )
 
         with gr.Row():
-            reset_btn = gr.Button("Reset Failed Videos", variant="secondary")
-            reset_all_btn = gr.Button("Reset ALL Videos", variant="stop")
-            reset_out = gr.Textbox(label="", interactive=False, scale=3)
-        reset_btn.click(_reset_failed_videos, outputs=reset_out)
-        reset_all_btn.click(_reset_all_videos, outputs=reset_out)
+            run_now_btn  = gr.Button("▶ Run Now",            variant="primary")
+            reset_btn    = gr.Button("Reset Failed Videos",  variant="secondary")
+            reset_all_btn = gr.Button("Reset ALL Videos",    variant="stop")
+            action_out   = gr.Textbox(label="", interactive=False, scale=3)
+        run_now_btn.click(_run_now,              outputs=action_out)
+        reset_btn.click(_reset_failed_videos,    outputs=action_out)
+        reset_all_btn.click(_reset_all_videos,   outputs=action_out)
 
         gr.Markdown(
             "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos._  \n"
-            "_>>> prefix = error or warning.  Click **Reset Failed Videos** to unblock "
-            "videos stuck as 'failed' so they retry on the next poll._"
+            "_**▶ Run Now** triggers an immediate poll (reloads config.json — no restart needed after changing folder ID)._  \n"
+            "_**Reset Failed Videos** unblocks videos stuck as 'failed' so they retry on the next poll._"
         )
 
     return demo
 
 
-def launch(share: bool = False) -> None:
+def launch(share: bool = False, run_now_fn: Callable | None = None) -> None:
     """Launch Gradio in a daemon thread so it doesn't block the main loop."""
+    global _run_now_fn
+    _run_now_fn = run_now_fn
     demo = build_ui()
 
     def _run():
