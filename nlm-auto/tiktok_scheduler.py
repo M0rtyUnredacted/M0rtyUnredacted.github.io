@@ -721,7 +721,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         ui_log("TikTok: 'Schedule' already active — skipping toggle click.")
     else:
         _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
-        time.sleep(1.5)
+        time.sleep(2.5)  # extra time for React to render date/time pickers
+        _screenshot_on_fail(page, "after_toggle")  # diagnostic — always saved
         # Verify it actually activated
         try:
             for _rctx in (page, frame):
@@ -762,6 +763,30 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     }""")
     ui_log(f"TikTok: form-scroll result: {_scroll_result}")
     time.sleep(1.2)
+    # Wait up to 8 s for TikTok to render date/time pickers after toggle click.
+    # TikTok's React app can take several seconds on slow connections.
+    _picker_wait_sels = (
+        "input[type='date']", "input[type='datetime-local']",
+        "[class*='DatePicker']", "[class*='DateInput']",
+        "[class*='ScheduleDate']", "[class*='ScheduleTime']",
+        "[data-e2e*='schedule-date' i]", "[data-e2e*='schedule-time' i]",
+    )
+    for _pw in range(16):  # up to 8 s (16 × 0.5 s)
+        _found_early = False
+        for _pwctx in ([page] + list(page.frames)):
+            for _pws in _picker_wait_sels:
+                try:
+                    if _pwctx.locator(_pws).first.is_visible(timeout=200):
+                        _found_early = True
+                        break
+                except Exception:
+                    continue
+            if _found_early:
+                break
+        if _found_early:
+            ui_log(f"TikTok: date/time picker visible after {(_pw + 1) * 0.5:.1f}s.")
+            break
+        time.sleep(0.5)
 
     # ── DOM dump helper ────────────────────────────────────────────────────────
     # Saves ALL interactive/relevant DOM elements to schedule_dom.log
@@ -818,11 +843,18 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         if picker_type == "time":
             _pat = _re.compile(r'^\d{1,2}:\d{2}(\s*(AM|PM))?$', _re.I)
         else:
-            _pat = _re.compile(r'^\d{4}-\d{2}-\d{2}$|^\d{1,2}/\d{1,2}/\d{4}$')
+            _pat = _re.compile(
+                r'^\d{4}-\d{2}-\d{2}$'                       # 2026-03-05
+                r'|^\d{1,2}/\d{1,2}/\d{4}$'                  # 3/5/2026
+                r'|^\d{4}/\d{1,2}/\d{1,2}$'                  # 2026/3/5
+                r'|^\d{2}\.\d{2}\.\d{4}$'                    # 05.03.2026
+                r'|^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$'  # Mar 5, 2026
+                r'|^\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4}$',   # 5 Mar 2026
+                _re.I)
         _sel = ("button, select, [tabindex='0'], [role='button'], "
                 "[role='combobox'], input[type='time'], input[type='date'], "
                 "input[type='datetime-local']")
-        for _ctx in (page, frame):
+        for _ctx in ([page] + list(page.frames)):
             try:
                 _els = _ctx.locator(_sel).all()
                 for _el in _els[:80]:
@@ -861,8 +893,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     )
 
     def _find_picker_by_sel(sels: tuple):
-        """Classic selector scan — page first, then frame."""
-        for _ctx in (page, frame):
+        """Classic selector scan — page first, then all frames."""
+        for _ctx in ([page] + list(page.frames)):
             for _sel in sels:
                 try:
                     _el = _ctx.locator(_sel).first
@@ -876,6 +908,61 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                     continue
         return None
 
+
+    def _find_picker_by_js(picker_type: str):
+        """Last-resort: use JS to find any visible element whose text looks like
+        a date or time, mark it with a temp attribute, then query it via Playwright.
+        Catches display formats missed by the regex scan (locale-formatted dates,
+        non-standard separators, etc.)."""
+        if picker_type == "time":
+            js_pat = r'\d{1,2}:\d{2}(\s*(AM|PM))?'
+        else:
+            js_pat = (
+                r'\d{4}[-/]\d{1,2}[-/]\d{1,2}'     # 2026-03-05 / 2026/3/5
+                r'|\d{1,2}[-/]\d{1,2}[-/]\d{4}'     # 3/5/2026 / 05-03-2026
+                r'|\d{2}\.\d{2}\.\d{4}'              # 05.03.2026
+                r'|[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}'  # Mar 5, 2026
+                r'|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4}'    # 5 Mar 2026
+            )
+        attr = f"data-claude-picker-{picker_type}"
+        js_code = f"""() => {{
+            const pat = new RegExp('{js_pat}', 'i');
+            const sels = [
+                'button', 'input', 'select',
+                '[role="button"]', '[role="combobox"]', '[tabindex="0"]'
+            ];
+            for (const sel of sels) {{
+                for (const el of document.querySelectorAll(sel)) {{
+                    const txt = (el.innerText || el.value || el.textContent || '').trim();
+                    if (pat.test(txt) && el.offsetParent !== null) {{
+                        el.setAttribute('{attr}', '1');
+                        return true;
+                    }}
+                }}
+            }}
+            return false;
+        }}"""
+        try:
+            for _ctx in ([page] + list(page.frames)):
+                try:
+                    found = _ctx.evaluate(js_code)
+                    if found:
+                        el = _ctx.locator(f"[{attr}]").first
+                        if el.is_visible(timeout=500):
+                            # Clean up attribute so it doesn't affect later queries
+                            try:
+                                _ctx.evaluate(
+                                    f"() => document.querySelector('[{attr}]')"
+                                    f"?.removeAttribute('{attr}')"
+                                )
+                            except Exception:
+                                pass
+                            return el
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
 
     def _fill_picker(el, val_iso: str, val_slash: str, val_hhmm: str,
                      val_ampm: str, label: str):
@@ -999,14 +1086,16 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     # ── Set date ──────────────────────────────────────────────────────────────
     # Try text-pattern scan first (class-name agnostic), then selector fallback
-    date_el = _find_picker_by_text("date") or _find_picker_by_sel(_DATE_SELS)
+    date_el = (_find_picker_by_text("date")
+               or _find_picker_by_sel(_DATE_SELS)
+               or _find_picker_by_js("date"))
     if date_el is None:
         _screenshot_on_fail(page, "date_picker_missing")
         _dump_schedule_dom("date_picker_missing")
         raise RuntimeError(
             "TikTok date picker not found after enabling schedule toggle. "
             "Check temp/fail_date_picker_missing_*.png; "
-            "DOM elements logged to app.log."
+            "DOM dump → temp/schedule_dom.log."
         )
 
     _safe_click(page, date_el, ui_log, "date_trigger")
@@ -1019,14 +1108,16 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     time.sleep(0.5)
 
     # ── Set time ──────────────────────────────────────────────────────────────
-    time_el = _find_picker_by_text("time") or _find_picker_by_sel(_TIME_SELS)
+    time_el = (_find_picker_by_text("time")
+               or _find_picker_by_sel(_TIME_SELS)
+               or _find_picker_by_js("time"))
     if time_el is None:
         _screenshot_on_fail(page, "time_picker_missing")
         _dump_schedule_dom("time_picker_missing")
         raise RuntimeError(
             "TikTok time picker not found after setting date. "
             "Check temp/fail_time_picker_missing_*.png; "
-            "DOM elements logged to app.log."
+            "DOM dump → temp/schedule_dom.log."
         )
 
     _safe_click(page, time_el, ui_log, "time_trigger")
