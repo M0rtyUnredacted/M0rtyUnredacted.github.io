@@ -439,22 +439,56 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         upload_input.wait_for(state="attached", timeout=10_000)
         upload_input.set_input_files(mp4_path)
 
+    # Caption-field selectors, ordered from most-specific to broadest.
+    # TikTok Studio uses a Draft.js rich-text editor; we cover multiple versions
+    # of their class names plus generic contenteditable fallbacks.
+    _CAPTION_SELS = (
+        # data-e2e attribute (most stable — TikTok keeps these for automation)
+        "[data-e2e='upload-caption']",
+        "[data-e2e='caption-input']",
+        # data-placeholder attribute text (common in current TikTok Studio)
+        "div[contenteditable='true'][data-placeholder*='caption' i]",
+        "div[contenteditable='true'][data-placeholder*='describe' i]",
+        "div[contenteditable='true'][data-placeholder*='tell' i]",
+        # Draft.js specific markers
+        "[data-text='true'][contenteditable='true']",
+        ".DraftEditor-editorContainer [contenteditable='true']",
+        "[data-contents='true'] [contenteditable='true']",
+        # Class-based fallbacks
+        "[contenteditable='true'][class*='caption']",
+        "[contenteditable='true'][class*='editor-kit']",
+        "textarea[placeholder*='caption' i]",
+        # Broadest: any visible contenteditable in the frame
+        "div[contenteditable='true']",
+    )
+    _caption_sel = ", ".join(_CAPTION_SELS)
+
     ui_log("TikTok: waiting for upload to complete ...")
-    deadline = time.time() + 300
+    deadline = time.time() + 600   # 10 minutes — large videos need more time
+    _last_diag = time.time()
     while time.time() < deadline:
-        caption_field = frame.locator(
-            # Most specific first: placeholder text on the caption div
-            "div[contenteditable='true'][data-placeholder*='caption' i], "
-            "div[contenteditable='true'][data-placeholder*='describe' i], "
-            # Class-based fallbacks
-            "[contenteditable='true'][class*='caption'], "
-            "textarea[placeholder*='caption' i], "
-            # Broadest last — only reached if nothing above matches
-            "div[class*='editor'][contenteditable='true']"
-        ).first
+        caption_field = frame.locator(_caption_sel).first
         try:
             if caption_field.is_visible():
                 break
+            # Every 60 s log a brief diagnostic so we can see what IS visible
+            if time.time() - _last_diag >= 60:
+                _last_diag = time.time()
+                elapsed = int(time.time() - (deadline - 600))
+                try:
+                    # Count any contenteditable elements (signals caption ready)
+                    ce_count = frame.locator("[contenteditable='true']").count()
+                    # Check if upload progress indicator is still present
+                    prog = frame.locator(
+                        "[class*='progress'], [class*='uploading'], "
+                        "[aria-label*='upload' i][role='progressbar']"
+                    ).count()
+                    ui_log(
+                        f"TikTok: still waiting … {elapsed}s elapsed, "
+                        f"contenteditable={ce_count}, progress-els={prog}"
+                    )
+                except Exception:
+                    ui_log(f"TikTok: still waiting … {elapsed}s elapsed")
         except Exception as _exc:
             if "closed" in str(_exc).lower() or "TargetClosed" in type(_exc).__name__:
                 _screenshot_on_fail(page, "frame_closed_during_upload")
@@ -467,7 +501,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         time.sleep(3)
     else:
         _screenshot_on_fail(page, "upload_timeout")
-        raise TimeoutError("TikTok upload did not finish within 5 minutes.")
+        raise TimeoutError("TikTok upload did not finish within 10 minutes.")
 
     # ── Post-upload dialogs ───────────────────────────────────────────────────
     # TikTok may show advisory dialogs immediately after a video finishes
@@ -482,16 +516,8 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # re-rendered after upload finished, leaving the old locator stale).
     # Small pause first to let the post-upload UI finish settling.
     time.sleep(2)
-    caption_field = frame.locator(
-        # Most specific first: placeholder text on the caption div
-        "div[contenteditable='true'][data-placeholder*='caption' i], "
-        "div[contenteditable='true'][data-placeholder*='describe' i], "
-        # Class-based fallbacks
-        "[contenteditable='true'][class*='caption'], "
-        "textarea[placeholder*='caption' i], "
-        # Broadest last — only reached if nothing above matches
-        "div[class*='editor'][contenteditable='true']"
-    ).first
+    # Re-query using the same broad selector set used in the wait loop.
+    caption_field = frame.locator(_caption_sel).first
     ui_log("TikTok: filling caption ...")
     _screenshot_on_fail(page, "before_caption")  # diagnostic: see the page state
     _safe_click(page, caption_field, ui_log, "caption_field")
