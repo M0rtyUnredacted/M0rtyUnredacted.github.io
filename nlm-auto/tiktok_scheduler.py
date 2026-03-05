@@ -24,6 +24,11 @@ class TiktokRateLimitError(RuntimeError):
     """TikTok is throttling uploads (/upload/unavailable).  Transient — do NOT
     mark the video as permanently failed; it will be retried on the next poll."""
 
+
+class TiktokUploadTimeoutError(TiktokRateLimitError):
+    """Upload iframe never showed the caption field within the timeout window.
+    Likely a slow network or TikTok processing delay — transient, retry next poll."""
+
 TEMP_DIR = os.path.join(os.path.dirname(__file__), "temp")
 CDP_URL = "http://127.0.0.1:9222"
 TIKTOK_STUDIO_URL = "https://www.tiktok.com/tiktokstudio/upload"
@@ -57,11 +62,12 @@ def run(config: dict, ui_log):
         try:
             _process_video(mp4, config, drive, ui_log)
         except TiktokRateLimitError as exc:
-            # Transient — TikTok is throttling.  Log and stop the run cleanly;
-            # the video is NOT marked failed so it retries on the next poll.
-            # Do NOT re-raise — that would trigger the failure email handler.
-            ui_log(f"TikTok: rate-limited — will retry '{mp4['name']}' next poll.")
-            log.warning("TikTok rate limit on '%s': %s", mp4["name"], exc)
+            # Covers TiktokRateLimitError AND TiktokUploadTimeoutError (subclass).
+            # Both are transient — do NOT mark the video as permanently failed;
+            # it will be retried on the next poll.
+            reason = "rate-limited" if type(exc) is TiktokRateLimitError else "upload timed out"
+            ui_log(f"TikTok: {reason} — will retry '{mp4['name']}' next poll.")
+            log.warning("TikTok transient error on '%s': %s", mp4["name"], exc)
             return
         except Exception as exc:
             log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
@@ -96,12 +102,27 @@ def _process_video(mp4: dict, config: dict, drive: DriveClient, ui_log):
         else:
             schedule_dt = datetime.now() + timedelta(hours=gap_hours)
 
+        # TikTok only allows scheduling up to 10 days ahead.
+        # If the computed slot exceeds that, cap it and warn — a backed-up queue
+        # could silently push the date past TikTok's limit.
+        _MAX_SCHEDULE_DAYS = 10
+        _max_allowed = datetime.now() + timedelta(days=_MAX_SCHEDULE_DAYS - 1, hours=23)
+        if schedule_dt > _max_allowed:
+            ui_log(
+                f"TikTok: schedule {schedule_dt:%Y-%m-%d %H:%M} exceeds 10-day limit "
+                f"— capping to {_max_allowed:%Y-%m-%d %H:%M}"
+            )
+            schedule_dt = _max_allowed
+
         ui_log(f"TikTok: scheduling at {schedule_dt.strftime('%Y-%m-%d %H:%M')} ...")
         _tiktok_upload(page, local_mp4, caption, schedule_dt, ui_log)
         db.mark_tiktok_scheduled(file_id, name, schedule_dt.isoformat())
         ui_log(f"TikTok: '{name}' scheduled.")
     finally:
-        page.close()
+        try:
+            page.close()
+        except Exception:
+            pass  # page may already be closed; don't mask the real exception
         try:
             os.remove(local_mp4)
         except FileNotFoundError:
@@ -390,6 +411,10 @@ def _dismiss_advisory_dialogs(page, frame, ui_log) -> None:
 
 
 def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_log):
+    # Accept native "Leave this page?" / beforeunload browser dialogs automatically
+    # so they never block navigation or uploads.
+    page.on("dialog", lambda d: d.accept())
+
     ui_log("TikTok: navigating to Studio ...")
     page.goto(TIKTOK_STUDIO_URL, wait_until="domcontentloaded", timeout=60_000)
     _dismiss_joyride(page)
@@ -501,7 +526,11 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         time.sleep(3)
     else:
         _screenshot_on_fail(page, "upload_timeout")
-        raise TimeoutError("TikTok upload did not finish within 10 minutes.")
+        raise TiktokUploadTimeoutError(
+            "TikTok upload did not finish within 10 minutes "
+            "(caption field never appeared). "
+            "Check temp/fail_upload_timeout_*.png for the page state."
+        )
 
     # ── Post-upload dialogs ───────────────────────────────────────────────────
     # TikTok may show advisory dialogs immediately after a video finishes
@@ -519,12 +548,18 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # Re-query using the same broad selector set used in the wait loop.
     caption_field = frame.locator(_caption_sel).first
     ui_log("TikTok: filling caption ...")
-    _screenshot_on_fail(page, "before_caption")  # diagnostic: see the page state
+    _screenshot_on_fail(page, "before_caption")  # diagnostic: always saved for review
     _safe_click(page, caption_field, ui_log, "caption_field")
+    # Triple-click selects the whole line reliably in Draft.js (Ctrl+A sometimes
+    # selects across block boundaries but misses embedded nodes).
+    caption_field.click(click_count=3)
     caption_field.press("Control+a")
-    caption_field.press("Delete")
+    caption_field.press("Backspace")
     page.keyboard.type(caption[:2200])
-    time.sleep(1)
+    # Draft.js shows autocomplete popups for '#' (hashtags) and '@' (mentions).
+    # Escape closes any open popup without losing the typed text.
+    page.keyboard.press("Escape")
+    time.sleep(0.5)
 
     # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
@@ -552,9 +587,12 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             "TikTok may have changed their UI — selectors need updating."
         )
 
-    # TikTok uses custom React date pickers — they sometimes render as
-    # native inputs, sometimes as styled divs.  Try native fill first,
-    # then fall back to click-and-type.
+    # TikTok Studio uses custom React date/time pickers.  They may render as
+    # native <input type="date|time"> or as styled <input type="text">.
+    # Strategy: locate, triple-click to select all existing text, type the
+    # value, then dispatch React's synthetic events to commit it.
+    # We try two date formats in case TikTok expects MM/DD/YYYY instead of
+    # YYYY-MM-DD (varies by TikTok Studio version/locale).
     date_input = frame.locator(
         "input[type='date'], "
         "input[placeholder*='date' i], "
@@ -563,10 +601,20 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     ).first
     try:
         date_input.wait_for(state="visible", timeout=5_000)
-        date_input.click()
+        date_input.click(click_count=3)
+        # Try YYYY-MM-DD first (ISO / Chrome native date input format)
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
         date_input.dispatch_event("input")
         date_input.dispatch_event("change")
+        time.sleep(0.3)
+        # If the field still shows an unrecognised value, try MM/DD/YYYY
+        current_val = date_input.input_value()
+        if not current_val or current_val in ("", "undefined"):
+            date_input.click(click_count=3)
+            date_input.type(schedule_dt.strftime("%m/%d/%Y"))
+            date_input.dispatch_event("input")
+            date_input.dispatch_event("change")
+        date_input.press("Tab")
         time.sleep(0.5)
     except Exception:
         _screenshot_on_fail(page, "date_picker_missing")
@@ -583,10 +631,19 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     ).first
     try:
         time_input.wait_for(state="visible", timeout=5_000)
-        time_input.click()
+        time_input.click(click_count=3)
+        # Try 24-h first; if blank, fall back to 12-h AM/PM (some TikTok locales)
         time_input.fill(schedule_dt.strftime("%H:%M"))
         time_input.dispatch_event("input")
         time_input.dispatch_event("change")
+        time.sleep(0.3)
+        current_val = time_input.input_value()
+        if not current_val or current_val in ("", "undefined"):
+            time_input.click(click_count=3)
+            time_input.type(schedule_dt.strftime("%I:%M %p"))  # e.g. "03:00 PM"
+            time_input.dispatch_event("input")
+            time_input.dispatch_event("change")
+        time_input.press("Tab")
         time.sleep(0.5)
     except Exception:
         _screenshot_on_fail(page, "time_picker_missing")
@@ -612,9 +669,42 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     _safe_click(page, post_btn, ui_log, "post_button")
     time.sleep(3)
 
-    confirm = frame.locator("button:has-text('Confirm'), button:has-text('OK')").first
-    if confirm.is_visible():
-        _safe_click(page, confirm, ui_log, "confirm_button")
-        time.sleep(2)
+    # ── Confirm intermediate dialog (if any) ─────────────────────────────────
+    for _confirm_sel in ("button:has-text('Confirm')", "button:has-text('OK')"):
+        try:
+            btn = frame.locator(_confirm_sel).first
+            if btn.is_visible(timeout=1_500):
+                _safe_click(page, btn, ui_log, "confirm_button")
+                time.sleep(2)
+                break
+        except Exception:
+            pass
+
+    # ── Verify success / surface errors ──────────────────────────────────────
+    # TikTok shows a green banner or navigates after successful scheduling.
+    # Catch validation errors (bad time, processing not done, etc.) so the
+    # log shows a useful message instead of silently thinking it succeeded.
+    _screenshot_on_fail(page, "after_schedule")  # always saved — post-submit state
+    time.sleep(1)
+    _error_sels = (
+        "div:has-text('Please set a valid')",
+        "div:has-text('scheduled time must be')",
+        "div:has-text('minimum') :has-text('minutes')",
+        "div:has-text('Something went wrong')",
+        "div:has-text('failed to')",
+        "[class*='error']:has-text('schedule')",
+        "[class*='error']:has-text('time')",
+    )
+    for sel in _error_sels:
+        try:
+            el = frame.locator(sel).first
+            if el.is_visible(timeout=500):
+                msg = el.inner_text(timeout=500).strip()[:200]
+                _screenshot_on_fail(page, "schedule_validation_error")
+                raise RuntimeError(f"TikTok scheduling validation error: {msg!r}")
+        except RuntimeError:
+            raise
+        except Exception:
+            continue
 
     ui_log("TikTok: post scheduled.")
