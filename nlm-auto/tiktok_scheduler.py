@@ -215,19 +215,27 @@ def _dismiss_draft_recovery(page, ui_log) -> None:
     - The dialogs live on the main page, NOT inside the upload iframe.
     - button:has-text() matches even when the button label is CSS-truncated.
     """
-    # ── Broad detection: any of the known dialog variants ─────────────────────
+    # ── Phase 0: TUXModal sweep ───────────────────────────────────────────────
+    # TikTok's design system uses class='TUXModal-overlay'.  CSS [class*='modal']
+    # is case-sensitive and never matched this.  Run the sweep unconditionally
+    # so any open TUXModal (draft discard, advisory, etc.) is closed first.
+    _dismiss_any_tux_modal(page, ui_log)
+
+    # ── Broad detection: any of the known non-TUX dialog variants ─────────────
     dialog_sel = (
         "div:has-text('Discard this post'), "           # confirmation dialog
         "div:has-text('wasn\\'t saved'), "              # variant A
         "div:has-text('unfinished post'), "             # variant B
         "div:has-text('Continue editing'), "            # variant C
-        "[class*='modal']:has-text('discard'), "        # generic modal
+        "div:has-text('and any edit'), "                # TUXModal text (fallback)
+        "div:has-text('will be discarded'), "           # TUXModal text (fallback)
+        "[class*='modal']:has-text('discard'), "        # generic modal (lowercase m)
         "[class*='dialog']:has-text('discard')"
     )
     try:
-        page.wait_for_selector(dialog_sel, timeout=5_000)
+        page.wait_for_selector(dialog_sel, timeout=3_000)
     except Exception:
-        return  # no draft dialog present — nothing to do
+        return  # no further draft dialogs — nothing to do
 
     ui_log("TikTok: draft dialog detected — discarding ...")
 
@@ -277,6 +285,50 @@ def _dismiss_draft_recovery(page, ui_log) -> None:
     # Settle wait: TikTok re-renders the upload form after final discard
     time.sleep(2)
     ui_log("TikTok: draft discarded, upload form should be fresh.")
+
+
+def _dismiss_any_tux_modal(page, ui_log) -> None:
+    """Close any open TUXModal-overlay that would intercept pointer events.
+
+    TikTok's design system uses class='TUXModal-overlay' with
+    data-transition-status='open'.  CSS [class*='modal'] is case-sensitive
+    and would NOT match 'TUXModal', which is why it was missed before.
+
+    Button priority:
+      Discard  — dismiss draft/post confirmation (always correct when uploading)
+      Close / Got it / OK / Continue — advisory banners
+      Escape   — last-resort keyboard dismiss
+
+    Called at the start of _dismiss_draft_recovery, after _dismiss_advisory_dialogs,
+    and directly before any caption/schedule click so a modal can never block us.
+    """
+    for _attempt in range(4):   # handle up to 4 stacked TUXModals
+        try:
+            overlay = page.locator(
+                "[class*='TUXModal-overlay'][data-transition-status='open'], "
+                "[data-floating-ui-portal] [data-transition-status='open']"
+            ).first
+            if not overlay.is_visible(timeout=1_500):
+                break
+        except Exception:
+            break
+
+        clicked = False
+        for btn_text in ("Discard", "Close", "Got it", "OK", "Continue"):
+            try:
+                btn = overlay.locator(f"button:has-text('{btn_text}')").first
+                if btn.is_visible(timeout=500):
+                    ui_log(f"TikTok: closing TUXModal ('{btn_text}') ...")
+                    btn.click()
+                    time.sleep(1.2)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
+            page.keyboard.press("Escape")
+            time.sleep(0.5)
+            break
 
 
 def _dismiss_joyride(page) -> None:
@@ -391,6 +443,9 @@ def _dismiss_advisory_dialogs(page, frame, ui_log) -> None:
         "button:has-text('Dismiss')",
         "[aria-label='Close']",
     )
+    # TikTok may also surface advisory content inside a TUXModal overlay.
+    _dismiss_any_tux_modal(page, ui_log)
+
     for _attempt in range(5):
         found_any = False
         for sel in dismiss_btns:
@@ -545,6 +600,9 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     # re-rendered after upload finished, leaving the old locator stale).
     # Small pause first to let the post-upload UI finish settling.
     time.sleep(2)
+    # Final sweep: dismiss any TUXModal that appeared during video processing.
+    # This is the most common cause of "intercepts pointer events" on the caption.
+    _dismiss_any_tux_modal(page, ui_log)
     # Re-query using the same broad selector set used in the wait loop.
     caption_field = frame.locator(_caption_sel).first
     ui_log("TikTok: filling caption ...")
