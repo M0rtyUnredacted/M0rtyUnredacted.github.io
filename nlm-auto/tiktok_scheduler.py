@@ -636,7 +636,7 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     try:
         schedule_toggle.wait_for(state="visible", timeout=8_000)
         _safe_click(page, schedule_toggle, ui_log, "schedule_toggle")
-        time.sleep(1)
+        time.sleep(2)  # React re-renders the date/time section after toggle
     except Exception:
         _screenshot_on_fail(page, "schedule_toggle_missing")
         raise RuntimeError(
@@ -645,27 +645,95 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             "TikTok may have changed their UI — selectors need updating."
         )
 
-    # TikTok Studio uses custom React date/time pickers.  They may render as
-    # native <input type="date|time"> or as styled <input type="text">.
-    # Strategy: locate, triple-click to select all existing text, type the
-    # value, then dispatch React's synthetic events to commit it.
-    # We try two date formats in case TikTok expects MM/DD/YYYY instead of
-    # YYYY-MM-DD (varies by TikTok Studio version/locale).
-    date_input = frame.locator(
-        "input[type='date'], "
-        "input[placeholder*='date' i], "
-        "input[class*='date' i], "
-        "input[class*='Date']"
-    ).first
+    # TikTok Studio uses a custom TUX React date/time picker — NOT a native
+    # <input type="date|time">.  Selector strategy:
+    #   1. TUX-specific aria-labels / data-e2e attributes (most stable)
+    #   2. Class-name patterns covering TUX naming conventions
+    #   3. Any text input near the word "date" / "time" in the schedule section
+    #   4. Broadest: any text input that appeared after the toggle was clicked
+    # We search BOTH the upload iframe AND the main page because TikTok may
+    # render the date picker as a portal outside the iframe.
+    _DATE_SELS = (
+        "[data-e2e*='date' i]",
+        "[aria-label*='date' i]",
+        "[aria-label*='Date']",
+        "input[type='date']",
+        "input[placeholder*='date' i]",
+        "input[placeholder*='mm/dd' i]",
+        "input[placeholder*='yyyy' i]",
+        "[class*='TUXDate']",
+        "[class*='DatePicker'] input",
+        "[class*='date-picker'] input",
+        "[class*='datePicker'] input",
+        "[class*='date_picker'] input",
+        "input[class*='date' i]",
+    )
+    _TIME_SELS = (
+        "[data-e2e*='time' i]",
+        "[aria-label*='time' i]",
+        "[aria-label*='Time']",
+        "input[type='time']",
+        "input[placeholder*='time' i]",
+        "input[placeholder*='hh:mm' i]",
+        "[class*='TUXTime']",
+        "[class*='TimePicker'] input",
+        "[class*='time-picker'] input",
+        "[class*='timePicker'] input",
+        "input[class*='time' i]",
+    )
+
+    def _find_picker(contexts, sels, label):
+        """Search frame then page for the first visible picker input."""
+        for ctx in contexts:
+            for sel in sels:
+                try:
+                    el = ctx.locator(sel).first
+                    if el.is_visible(timeout=800):
+                        return el
+                except Exception:
+                    continue
+        return None
+
+    def _dump_inputs(contexts, ui_log, label):
+        """Log all visible inputs (type, placeholder, aria-label, class snippet)
+        so we know exactly what's available if a picker isn't found."""
+        entries = []
+        for ctx_name, ctx in contexts:
+            try:
+                for el in ctx.locator("input").all()[:30]:
+                    try:
+                        if not el.is_visible(timeout=150):
+                            continue
+                        attrs = {
+                            a: (el.get_attribute(a) or "")[:60]
+                            for a in ("type", "placeholder", "aria-label", "class")
+                            if el.get_attribute(a)
+                        }
+                        entries.append(f"{ctx_name}: {attrs}")
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        ui_log(f"TikTok [{label}] visible inputs: {entries or '(none)'}")
+
+    _contexts = [(frame, "frame"), (page, "page")]  # frame first; page as fallback
+
+    date_input = _find_picker([frame, page], _DATE_SELS, "date")
+    if date_input is None:
+        _screenshot_on_fail(page, "date_picker_missing")
+        _dump_inputs(_contexts, ui_log, "date_picker_missing")
+        raise RuntimeError(
+            "TikTok date picker not found after enabling schedule toggle. "
+            "Check temp/fail_date_picker_missing_*.png and the log for "
+            "the full list of visible inputs."
+        )
+
     try:
-        date_input.wait_for(state="visible", timeout=5_000)
         date_input.click(click_count=3)
-        # Try YYYY-MM-DD first (ISO / Chrome native date input format)
         date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
         date_input.dispatch_event("input")
         date_input.dispatch_event("change")
         time.sleep(0.3)
-        # If the field still shows an unrecognised value, try MM/DD/YYYY
         current_val = date_input.input_value()
         if not current_val or current_val in ("", "undefined"):
             date_input.click(click_count=3)
@@ -674,23 +742,22 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             date_input.dispatch_event("change")
         date_input.press("Tab")
         time.sleep(0.5)
-    except Exception:
-        _screenshot_on_fail(page, "date_picker_missing")
+    except Exception as exc:
+        _screenshot_on_fail(page, "date_picker_fill_error")
+        raise RuntimeError(f"TikTok date picker fill failed: {exc}") from exc
+
+    time_input = _find_picker([frame, page], _TIME_SELS, "time")
+    if time_input is None:
+        _screenshot_on_fail(page, "time_picker_missing")
+        _dump_inputs(_contexts, ui_log, "time_picker_missing")
         raise RuntimeError(
-            "TikTok date picker not found after enabling schedule toggle. "
-            "Check temp/fail_date_picker_missing_*.png."
+            "TikTok time picker not found after enabling schedule toggle. "
+            "Check temp/fail_time_picker_missing_*.png and the log for "
+            "the full list of visible inputs."
         )
 
-    time_input = frame.locator(
-        "input[type='time'], "
-        "input[placeholder*='time' i], "
-        "input[class*='time' i], "
-        "input[class*='Time']"
-    ).first
     try:
-        time_input.wait_for(state="visible", timeout=5_000)
         time_input.click(click_count=3)
-        # Try 24-h first; if blank, fall back to 12-h AM/PM (some TikTok locales)
         time_input.fill(schedule_dt.strftime("%H:%M"))
         time_input.dispatch_event("input")
         time_input.dispatch_event("change")
@@ -698,17 +765,14 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         current_val = time_input.input_value()
         if not current_val or current_val in ("", "undefined"):
             time_input.click(click_count=3)
-            time_input.type(schedule_dt.strftime("%I:%M %p"))  # e.g. "03:00 PM"
+            time_input.type(schedule_dt.strftime("%I:%M %p"))
             time_input.dispatch_event("input")
             time_input.dispatch_event("change")
         time_input.press("Tab")
         time.sleep(0.5)
-    except Exception:
-        _screenshot_on_fail(page, "time_picker_missing")
-        raise RuntimeError(
-            "TikTok time picker not found after enabling schedule toggle. "
-            "Check temp/fail_time_picker_missing_*.png."
-        )
+    except Exception as exc:
+        _screenshot_on_fail(page, "time_picker_fill_error")
+        raise RuntimeError(f"TikTok time picker fill failed: {exc}") from exc
 
     # ── Submit ────────────────────────────────────────────────────────────────
     # Only look for a Schedule/Submit button — NOT "Post", to avoid accidentally
