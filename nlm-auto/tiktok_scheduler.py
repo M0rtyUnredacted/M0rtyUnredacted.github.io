@@ -287,7 +287,7 @@ def _dismiss_draft_recovery(page, ui_log) -> None:
     ui_log("TikTok: draft discarded, upload form should be fresh.")
 
 
-def _dismiss_any_tux_modal(page, ui_log) -> None:
+def _dismiss_any_tux_modal(page, ui_log, allow_discard: bool = True) -> None:
     """Close any open TUXModal-overlay that would intercept pointer events.
 
     TikTok's design system uses class='TUXModal-overlay' with
@@ -295,13 +295,22 @@ def _dismiss_any_tux_modal(page, ui_log) -> None:
     and would NOT match 'TUXModal', which is why it was missed before.
 
     Button priority:
-      Discard  — dismiss draft/post confirmation (always correct when uploading)
+      Discard  — dismiss draft/post confirmation (only when allow_discard=True)
       Close / Got it / OK / Continue — advisory banners
       Escape   — last-resort keyboard dismiss
 
-    Called at the start of _dismiss_draft_recovery, after _dismiss_advisory_dialogs,
-    and directly before any caption/schedule click so a modal can never block us.
+    allow_discard=False when called from advisory-dialog context: we must NOT
+    click Discard on the live post we just uploaded.
+
+    Called at the start of _dismiss_draft_recovery (allow_discard=True),
+    inside _dismiss_advisory_dialogs (allow_discard=False),
+    and directly before any caption/schedule click (allow_discard=True).
     """
+    btn_order = (
+        ["Discard", "Close", "Got it", "OK", "Continue"]
+        if allow_discard
+        else ["Close", "Got it", "OK", "Continue"]
+    )
     for _attempt in range(4):   # handle up to 4 stacked TUXModals
         try:
             overlay = page.locator(
@@ -314,7 +323,7 @@ def _dismiss_any_tux_modal(page, ui_log) -> None:
             break
 
         clicked = False
-        for btn_text in ("Discard", "Close", "Got it", "OK", "Continue"):
+        for btn_text in btn_order:
             try:
                 btn = overlay.locator(f"button:has-text('{btn_text}')").first
                 if btn.is_visible(timeout=500):
@@ -444,7 +453,8 @@ def _dismiss_advisory_dialogs(page, frame, ui_log) -> None:
         "[aria-label='Close']",
     )
     # TikTok may also surface advisory content inside a TUXModal overlay.
-    _dismiss_any_tux_modal(page, ui_log)
+    # allow_discard=False — we must NOT click Discard on the post we just uploaded.
+    _dismiss_any_tux_modal(page, ui_log, allow_discard=False)
 
     for _attempt in range(5):
         found_any = False
@@ -714,7 +724,9 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                         pass
             except Exception:
                 pass
-        ui_log(f"TikTok [{label}] visible inputs: {entries or '(none)'}")
+        msg = f"TikTok [{label}] visible inputs: {entries or '(none)'}"
+        log.info(msg)   # goes to app.log
+        ui_log(msg)     # goes to Gradio UI
 
     _contexts = [(frame, "frame"), (page, "page")]  # frame first; page as fallback
 
