@@ -2,8 +2,8 @@
   "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for details.",
 
   "google_drive": {
-    "tiktok_ready_folder_id":  "FILL_IN_your_TikTok_Ready_folder_id",
-    "tiktok_posted_folder_id": "FILL_IN_your_TikTok_Posted_folder_id"
+    "tiktok_ready_folder_id":  "1Y_gjrY3fryXLiI6011AuufpAlUDz7wc7",
+    "tiktok_posted_folder_id": "1Jcwza0dMUSgJfslNbg627GvWvLYph99c"
   },
 
   "tiktok": {

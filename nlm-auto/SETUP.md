@@ -116,8 +116,8 @@ Fill in every value:
 {
   "google_drive": {
     "query_docs_folder_id":  "paste-your-query-docs-folder-id-here",
-    "tiktok_ready_folder_id":  "paste-your-tiktok-ready-folder-id-here",
-    "tiktok_posted_folder_id": "paste-your-tiktok-posted-folder-id-here",
+    "tiktok_ready_folder_id":  "1Y_gjrY3fryXLiI6011AuufpAlUDz7wc7",
+    "tiktok_posted_folder_id": "1Jcwza0dMUSgJfslNbg627GvWvLYph99c",
     "poll_interval_minutes": 15
   },
 
