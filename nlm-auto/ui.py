@@ -30,6 +30,11 @@ def _drain_queue():
         del _log_lines[: len(_log_lines) - _MAX_LINES]
 
 
+def _get_latest_line() -> str:
+    _drain_queue()
+    return _log_lines[-1] if _log_lines else "(waiting...)"
+
+
 def _get_log_text() -> str:
     _drain_queue()
     if not _log_lines:
@@ -55,11 +60,21 @@ def build_ui() -> gr.Blocks:
     with gr.Blocks(title="TikTok Auto — M0rty Unredacted", theme=gr.themes.Soft()) as demo:
         gr.Markdown("## TikTok Automation App — M0rty Unredacted\nDrive → TikTok Studio scheduler")
 
+        # Single-line "latest" display — always visible regardless of scroll
+        gr.Textbox(
+            label="Latest",
+            value=_get_latest_line,
+            lines=1,
+            max_lines=1,
+            interactive=False,
+            every=5,
+        )
+
         log_box = gr.Textbox(
-            label="Live Status Log  (newest first — >>> = error/warning)",
+            label="Full Log  (newest first — scroll up for recent; >>> = error/warning)",
             value=_get_log_text,
-            lines=30,
-            max_lines=30,
+            lines=28,
+            max_lines=28,
             interactive=False,
             every=5,  # refresh every 5 seconds
         )

@@ -57,10 +57,12 @@ def run(config: dict, ui_log):
         try:
             _process_video(mp4, config, drive, ui_log)
         except TiktokRateLimitError as exc:
-            # Transient — TikTok is throttling.  Don't permanently fail the video.
-            ui_log(f"TikTok: rate-limited on '{mp4['name']}' — will retry next poll.")
+            # Transient — TikTok is throttling.  Log and stop the run cleanly;
+            # the video is NOT marked failed so it retries on the next poll.
+            # Do NOT re-raise — that would trigger the failure email handler.
+            ui_log(f"TikTok: rate-limited — will retry '{mp4['name']}' next poll.")
             log.warning("TikTok rate limit on '%s': %s", mp4["name"], exc)
-            raise RuntimeError(f"TikTok rate-limited: {exc}") from exc
+            return
         except Exception as exc:
             log.exception("TikTok Scheduler: failed on '%s'", mp4["name"])
             db.mark_tiktok_failed(mp4["id"], mp4["name"], str(exc))
