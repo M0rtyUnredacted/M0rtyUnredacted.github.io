@@ -210,15 +210,46 @@ def _dismiss_draft_recovery(page, ui_log) -> None:
 
     ui_log("TikTok: draft dialog detected — discarding ...")
 
-    # Pass 1 — handle 'Continue editing?' or 'unfinished post' prompt.
-    # These have a Discard button that triggers the confirmation dialog.
-    _click_discard_btn(page, ui_log, "draft-recovery prompt")
+    # Pass 1 — handle 'Continue editing?' or 'unfinished post' banner.
+    # Click Discard in the BANNER only; this triggers the confirmation modal.
+    _click_discard_btn(page, ui_log, "draft-recovery banner")
 
-    # Pass 2 — handle 'Discard this post?' confirmation (always present,
-    # sometimes the only dialog shown).
+    # Pass 2 — handle 'Discard this post?' confirmation modal.
+    #
+    # IMPORTANT: we cannot reuse _click_discard_btn here.  That helper uses
+    # locator(...).first, which finds the BANNER'S 'Discard' button (still
+    # present in the DOM behind the modal) instead of the modal's own button.
+    # Instead, scope the lookup to the dialog container first; if that fails,
+    # use .last (modal renders after the banner in DOM order).
     try:
         page.wait_for_selector("div:has-text('Discard this post')", timeout=4_000)
-        _click_discard_btn(page, ui_log, "discard-confirmation")
+        ui_log("TikTok: clicking Discard on confirmation modal ...")
+        clicked = False
+        for sel in (
+            "[role='dialog'] button:has-text('Discard')",
+            "[role='alertdialog'] button:has-text('Discard')",
+            "[class*='Modal'] button:has-text('Discard')",
+            "[class*='modal'] button:has-text('Discard')",
+            "[class*='Dialog'] button:has-text('Discard')",
+        ):
+            try:
+                btn = page.locator(sel).first
+                if btn.is_visible(timeout=1_000):
+                    btn.click()
+                    time.sleep(1.5)
+                    clicked = True
+                    break
+            except Exception:
+                continue
+        if not clicked:
+            # Last resort: .last is the final 'Discard' in DOM order = modal
+            try:
+                btn = page.locator("button:has-text('Discard')").last
+                if btn.is_visible(timeout=1_000):
+                    btn.click()
+                    time.sleep(1.5)
+            except Exception:
+                pass
     except Exception:
         pass  # confirmation didn't appear — already gone after pass 1
 
@@ -421,8 +452,18 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
             # Broadest last — only reached if nothing above matches
             "div[class*='editor'][contenteditable='true']"
         ).first
-        if caption_field.is_visible():
-            break
+        try:
+            if caption_field.is_visible():
+                break
+        except Exception as _exc:
+            if "closed" in str(_exc).lower() or "TargetClosed" in type(_exc).__name__:
+                _screenshot_on_fail(page, "frame_closed_during_upload")
+                raise RuntimeError(
+                    "TikTok upload iframe was closed while waiting for the upload to finish. "
+                    "This usually means an undismissed dialog navigated the page away. "
+                    "Check temp/fail_frame_closed_*.png for the page state."
+                ) from _exc
+            raise
         time.sleep(3)
     else:
         _screenshot_on_fail(page, "upload_timeout")

@@ -1,5 +1,6 @@
 """Gradio live-status UI — http://localhost:7860"""
 
+import os
 import queue
 import threading
 import time
@@ -9,6 +10,7 @@ import db
 _log_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
 _MAX_LINES = 500
+_LOG_FILE = os.path.join(os.path.dirname(__file__), "app.log")
 
 
 _ERROR_KEYWORDS = ("error", "failed", "warning", "warn", "rate-limit", "unavailable")
@@ -36,10 +38,20 @@ def _get_latest_line() -> str:
 
 
 def _get_log_text() -> str:
-    _drain_queue()
+    _drain_queue()  # keep in-memory list current for _get_latest_line
+    # Read the actual log file so ALL entries (not just ui_log calls) are shown,
+    # then reverse so newest lines appear at the top of the textbox.
+    try:
+        with open(_LOG_FILE, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        tail = lines[-_MAX_LINES:]  # cap at 500 lines
+        return "".join(reversed(tail)).rstrip() or "(log file empty)"
+    except FileNotFoundError:
+        pass
+    # Fallback to in-memory if file not yet created
     if not _log_lines:
         return "(waiting for activity...)"
-    return "\n".join(reversed(_log_lines))  # newest at top
+    return "\n".join(reversed(_log_lines))
 
 
 def _reset_failed_videos() -> str:
