@@ -771,8 +771,9 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "[class*='ScheduleDate']", "[class*='ScheduleTime']",
         "[data-e2e*='schedule-date' i]", "[data-e2e*='schedule-time' i]",
     )
-    for _pw in range(16):  # up to 8 s (16 × 0.5 s)
+    for _pw in range(30):  # up to 15 s (30 × 0.5 s)
         _found_early = False
+        # CSS selector scan (fast, class-name dependent)
         for _pwctx in ([page] + list(page.frames)):
             for _pws in _picker_wait_sels:
                 try:
@@ -783,10 +784,16 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                     continue
             if _found_early:
                 break
+        # Text-pattern scan as backup (class-name agnostic)
+        if not _found_early:
+            if _find_picker_by_text("date") is not None:
+                _found_early = True
         if _found_early:
             ui_log(f"TikTok: date/time picker visible after {(_pw + 1) * 0.5:.1f}s.")
             break
         time.sleep(0.5)
+    else:
+        ui_log("TikTok: WARNING — picker not detected in wait loop; will attempt locate anyway.")
 
     # ── DOM dump helper ────────────────────────────────────────────────────────
     # Saves ALL interactive/relevant DOM elements to schedule_dom.log
@@ -839,9 +846,14 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
 
     def _find_picker_by_text(picker_type: str):
         """Scan all interactive elements in page+frame, return the first one
-        whose inner text matches a time (HH:MM) or date (YYYY-MM-DD) pattern."""
+        whose inner text matches a time (HH:MM) or date pattern.
+        Also catches placeholder text used when pickers are empty (e.g. MM/DD/YYYY)."""
         if picker_type == "time":
-            _pat = _re.compile(r'^\d{1,2}:\d{2}(\s*(AM|PM))?$', _re.I)
+            _pat = _re.compile(
+                r'^\d{1,2}:\d{2}(\s*(AM|PM))?$'             # 10:30 AM / 22:30
+                r'|^hh:mm(\s*(am|pm))?$'                     # placeholder: hh:mm am
+                r'|^--:--$',                                  # placeholder: --:--
+                _re.I)
         else:
             _pat = _re.compile(
                 r'^\d{4}-\d{2}-\d{2}$'                       # 2026-03-05
@@ -849,7 +861,12 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
                 r'|^\d{4}/\d{1,2}/\d{1,2}$'                  # 2026/3/5
                 r'|^\d{2}\.\d{2}\.\d{4}$'                    # 05.03.2026
                 r'|^[A-Za-z]{3,9}\.?\s+\d{1,2},?\s+\d{4}$'  # Mar 5, 2026
-                r'|^\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4}$',   # 5 Mar 2026
+                r'|^\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4}$'    # 5 Mar 2026
+                r'|^[A-Za-z]{3,9}\.?\s+\d{1,2}$'             # Mar 5 (no year)
+                r'|^mm/dd/yyyy$'                              # placeholder text
+                r'|^dd/mm/yyyy$'                              # placeholder text
+                r'|^yyyy-mm-dd$'                              # placeholder text
+                r'|^select\s+date$',                          # "Select date" button
                 _re.I)
         _sel = ("button, select, [tabindex='0'], [role='button'], "
                 "[role='combobox'], input[type='time'], input[type='date'], "
@@ -876,11 +893,23 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "input[type='date']", "input[type='datetime-local']",
         "select[name*='date' i]", "select[class*='date' i]",
         "input[placeholder*='mm/dd' i]", "input[placeholder*='yyyy' i]",
+        "input[placeholder*='date' i]",
         "[data-e2e*='schedule-date' i]", "[data-e2e*='date'][role='button']",
+        "[data-e2e='schedule-date-picker']",
         "[class*='TUXDateInput']", "[class*='DateInput'][role='button']",
         "[class*='DateInput'][tabindex='0']", "[class*='DatePicker'][tabindex='0']",
         "[class*='ScheduleDate']", "[class*='schedule-date']",
         "[class*='ScheduleTime'] [role='button']:first-child",
+        # Newer TikTok Studio layouts
+        "[class*='whenToPost' i] [role='button']:first-child",
+        "[class*='PostTime' i] [role='button']:first-child",
+        "[class*='scheduleTime' i] [role='button']:first-child",
+        "div[class*='date' i][role='button']",
+        "div[class*='Date'][role='button']",
+        "span[class*='date' i][role='button']",
+        # Generic: first button/combobox inside any schedule container
+        "[class*='schedule' i] button:first-of-type",
+        "[class*='Schedule'] [role='combobox']:first-of-type",
     )
     _TIME_SELS = (
         "input[type='time']",
@@ -1085,10 +1114,30 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         return False
 
     # ── Set date ──────────────────────────────────────────────────────────────
-    # Try text-pattern scan first (class-name agnostic), then selector fallback
-    date_el = (_find_picker_by_text("date")
-               or _find_picker_by_sel(_DATE_SELS)
-               or _find_picker_by_js("date"))
+    # Retry up to 20 s — TikTok React can be slow to render pickers after toggle.
+    date_el = None
+    for _date_attempt in range(20):
+        date_el = (_find_picker_by_text("date")
+                   or _find_picker_by_sel(_DATE_SELS)
+                   or _find_picker_by_js("date"))
+        if date_el is not None:
+            if _date_attempt > 0:
+                ui_log(f"TikTok: date picker found on attempt {_date_attempt + 1}.")
+            break
+        # Scroll again in case the panel shifted
+        if _date_attempt in (4, 9, 14):
+            try:
+                page.evaluate("""() => {
+                    document.querySelectorAll('*').forEach(el => {
+                        const s = window.getComputedStyle(el);
+                        if ((s.overflowY === 'auto' || s.overflowY === 'scroll')
+                                && el.scrollHeight > el.clientHeight + 50)
+                            el.scrollTop = el.scrollHeight;
+                    });
+                }""")
+            except Exception:
+                pass
+        time.sleep(1.0)
     if date_el is None:
         _screenshot_on_fail(page, "date_picker_missing")
         _dump_schedule_dom("date_picker_missing")
