@@ -42,7 +42,23 @@ def _log_unhandled(exc_type, exc_value, exc_tb):
 
 sys.excepthook = _log_unhandled
 
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
+CONFIG_PATH   = os.path.join(os.path.dirname(__file__), "config.json")
+RECENT_LOG    = os.path.join(os.path.dirname(os.path.abspath(__file__)), "recent.log")
+_RECENT_LINES = 80   # how many tail lines to copy into recent.log
+
+
+def _write_recent_log():
+    """Copy the last _RECENT_LINES lines of app.log → recent.log.
+    recent.log always shows the most relevant context without scrolling."""
+    try:
+        with open(LOG_PATH, encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+        tail = lines[-_RECENT_LINES:]
+        with open(RECENT_LOG, "w", encoding="utf-8") as fh:
+            fh.write(f"=== recent.log — last {len(tail)} lines of app.log ===\n")
+            fh.writelines(tail)
+    except Exception:
+        pass
 
 
 def load_config() -> dict:
@@ -73,6 +89,8 @@ def make_tiktok_job(config: dict):
             log.exception("TikTok Scheduler error")
             ui_module.ui_log(f"TikTok ERROR: {exc}")
             mailer.send_failure(config, "TikTok Scheduler", exc)
+        finally:
+            _write_recent_log()   # always update recent.log after each run
     return job
 
 

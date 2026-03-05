@@ -629,17 +629,35 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         raise RuntimeError("Caption field disappeared after upload completed.")
     ui_log("TikTok: filling caption ...")
     _screenshot_on_fail(page, "before_caption")  # diagnostic: always saved for review
-    _safe_click(page, caption_field, ui_log, "caption_field")
-    # Triple-click selects the whole line reliably in Draft.js (Ctrl+A sometimes
-    # selects across block boundaries but misses embedded nodes).
-    caption_field.click(click_count=3)
-    caption_field.press("Control+a")
-    caption_field.press("Backspace")
-    page.keyboard.type(caption[:2200])
-    # Draft.js shows autocomplete popups for '#' (hashtags) and '@' (mentions).
-    # Escape closes any open popup without losing the typed text.
-    page.keyboard.press("Escape")
-    time.sleep(0.5)
+
+    # If this video was previously processed (draft left by a failed run) and
+    # the draft already has a REAL caption (longer than the filename fallback),
+    # keep it rather than overwriting with the filename fallback.
+    _filename_fallback = _caption_from_filename(os.path.splitext(os.path.basename(mp4_path))[0])
+    try:
+        _existing = caption_field.inner_text(timeout=800).strip()
+    except Exception:
+        _existing = ""
+    _caption_is_filename_fallback = caption == _filename_fallback
+    if _caption_is_filename_fallback and len(_existing) > len(caption) + 5:
+        ui_log(f"TikTok: draft already has a longer caption ({len(_existing)} chars) "
+               f"and current caption is filename fallback — keeping existing draft caption.")
+        caption = _existing  # use the better existing caption
+    # If the existing caption already matches what we want, skip the fill
+    if _existing.strip() == caption.strip():
+        ui_log("TikTok: caption already correct, skipping fill.")
+    else:
+        _safe_click(page, caption_field, ui_log, "caption_field")
+        # Triple-click selects the whole line reliably in Draft.js (Ctrl+A sometimes
+        # selects across block boundaries but misses embedded nodes).
+        caption_field.click(click_count=3)
+        caption_field.press("Control+a")
+        caption_field.press("Backspace")
+        page.keyboard.type(caption[:2200])
+        # Draft.js shows autocomplete popups for '#' (hashtags) and '@' (mentions).
+        # Escape closes any open popup without losing the typed text.
+        page.keyboard.press("Escape")
+        time.sleep(0.5)
 
     # ── Schedule ──────────────────────────────────────────────────────────────
     ui_log("TikTok: setting schedule ...")
@@ -701,177 +719,360 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
     except Exception:
         pass  # is_checked() may throw if element isn't a radio — ignore
 
-    # Scroll down so the date/time section that appears below the radio group
-    # is in the viewport before we search for it.
-    page.evaluate("window.scrollBy(0, 500)")
-    time.sleep(1)
+    # ── Scroll the inner form panel to reveal the date/time section ───────────
+    # The upload form is inside a scrollable div panel, not the main window.
+    # window.scrollBy() does nothing here — must scroll the panel itself.
+    _scroll_result = page.evaluate("""() => {
+        // 1. Try to scroll the schedule section into view within its container
+        const keywords = ['schedule', 'Schedule', 'WhenToPost', 'when-to-post',
+                          'ScheduleTime', 'schedule-time'];
+        for (const kw of keywords) {
+            const els = document.querySelectorAll(`[class*="${kw}"], [data-e2e*="${kw}"]`);
+            for (const el of els) {
+                if (el.offsetParent !== null) {
+                    el.scrollIntoView({block: 'center', behavior: 'instant'});
+                    return 'scrolled-to:' + (el.className || '').slice(0, 60);
+                }
+            }
+        }
+        // 2. Fallback: scroll every overflow-y container to its bottom
+        let scrolled = 0;
+        document.querySelectorAll('*').forEach(el => {
+            if (el === document.body || el === document.documentElement) return;
+            const style = window.getComputedStyle(el);
+            if ((style.overflowY === 'auto' || style.overflowY === 'scroll') &&
+                el.scrollHeight > el.clientHeight + 50) {
+                el.scrollTop = el.scrollHeight;
+                scrolled++;
+            }
+        });
+        return scrolled > 0 ? ('scrolled-containers:' + scrolled) : 'no-scroll-needed';
+    }""")
+    ui_log(f"TikTok: form-scroll result: {_scroll_result}")
+    time.sleep(1.2)
 
-    # TikTok Studio uses a custom TUX React date/time picker — NOT a native
-    # <input type="date|time">.  Selector strategy:
-    #   1. TUX-specific aria-labels / data-e2e attributes (most stable)
-    #   2. Class-name patterns covering TUX naming conventions
-    #   3. Any text input near the word "date" / "time" in the schedule section
-    #   4. Broadest: any text input that appeared after the toggle was clicked
-    # We search BOTH the upload iframe AND the main page because TikTok may
-    # render the date picker as a portal outside the iframe.
+    # ── DOM dump helper ────────────────────────────────────────────────────────
+    # Dumps ALL interactive/relevant elements on screen so we know exactly
+    # what TikTok rendered for the date/time section.  Runs on every failure.
+    def _dump_schedule_dom(label: str):
+        try:
+            els = page.evaluate("""() => {
+                const rows = [];
+                document.querySelectorAll('*').forEach(el => {
+                    if (!el.isConnected) return;
+                    const r = el.getBoundingClientRect();
+                    if (r.width < 3 || r.height < 3) return;
+                    const cls = (el.className || '').toString();
+                    const tag = el.tagName;
+                    const role = el.getAttribute('role') || '';
+                    const de2e = el.getAttribute('data-e2e') || '';
+                    const tab  = el.getAttribute('tabindex') || '';
+                    const al   = (el.getAttribute('aria-label') || '').slice(0, 35);
+                    const txt  = el.textContent?.trim().slice(0, 45) || '';
+                    const interesting = (
+                        tag === 'INPUT' || tag === 'BUTTON' || tag === 'SELECT' ||
+                        role === 'button' || role === 'combobox' || role === 'listbox' ||
+                        role === 'radio'  || role === 'dialog'   || role === 'option' ||
+                        tab  === '0' ||
+                        de2e !== '' ||
+                        cls.match(/schedule|ScheduleTime|DateInput|TimeInput|
+                                   Picker|Calendar|picker|calendar|WhenToPost|
+                                   date-time|dateTime|DateTime/ix)
+                    );
+                    if (interesting) rows.push(
+                        `${tag}[r=${role||'-'}][t=${tab||'-'}][de2e=${de2e||'-'}]` +
+                        `[al=${al}] .${cls.slice(0,60)} | "${txt}"`
+                    );
+                });
+                return rows.slice(0, 100);
+            }""")
+            for line in els:
+                log.info("TikTok [%s] DOM: %s", label, line)
+            ui_log(f"TikTok [{label}]: {len(els)} DOM elements logged → see app.log")
+        except Exception as _e:
+            ui_log(f"TikTok [{label}] DOM dump failed: {_e}")
+
+    # ── Find date/time picker ─────────────────────────────────────────────────
+    # TikTok Studio uses CUSTOM TUX React components — there are NO <input>
+    # elements for date/time.  The pickers are divs/buttons with role="button"
+    # or tabindex="0".  We try both input selectors (future-proofing) AND the
+    # custom component patterns we know about.
     _DATE_SELS = (
-        "[data-e2e*='date' i]",
-        "[aria-label*='date' i]",
-        "[aria-label*='Date']",
+        # ── Native inputs (some TikTok versions) ──
         "input[type='date']",
-        "input[placeholder*='date' i]",
         "input[placeholder*='mm/dd' i]",
         "input[placeholder*='yyyy' i]",
-        "[class*='TUXDate']",
-        "[class*='DatePicker'] input",
-        "[class*='date-picker'] input",
-        "[class*='datePicker'] input",
-        "[class*='date_picker'] input",
-        "input[class*='date' i]",
+        "input[placeholder*='date' i]",
+        "[data-e2e*='date' i] input",
+        # ── TUX custom date trigger (non-input) ──
+        "[data-e2e*='schedule-date' i]",
+        "[data-e2e*='date'][role='button']",
+        "[class*='TUXDateInput']",
+        "[class*='DateInput'][role='button']",
+        "[class*='DateInput'][tabindex='0']",
+        "[class*='date-input'][role='button']",
+        "[class*='DatePicker'][tabindex='0']",
+        "[class*='ScheduleDate']",
+        "[class*='schedule-date']",
+        "[class*='ScheduleTime'] [role='button']:first-child",
+        "[class*='schedule-time'] > *:first-child",
     )
     _TIME_SELS = (
-        "[data-e2e*='time' i]",
-        "[aria-label*='time' i]",
-        "[aria-label*='Time']",
+        # ── Native inputs ──
         "input[type='time']",
-        "input[placeholder*='time' i]",
         "input[placeholder*='hh:mm' i]",
-        "[class*='TUXTime']",
-        "[class*='TimePicker'] input",
-        "[class*='time-picker'] input",
-        "[class*='timePicker'] input",
-        "input[class*='time' i]",
+        "input[placeholder*='time' i]",
+        "[data-e2e*='time' i] input",
+        # ── TUX custom time trigger ──
+        "[data-e2e*='schedule-time' i]",
+        "[data-e2e*='time'][role='button']",
+        "[class*='TUXTimeInput']",
+        "[class*='TimeInput'][role='button']",
+        "[class*='TimeInput'][tabindex='0']",
+        "[class*='time-input'][role='button']",
+        "[class*='TimePicker'][tabindex='0']",
+        "[class*='ScheduleTime'] [role='button']:last-child",
+        "[class*='schedule-time'] > *:last-child",
     )
 
-    def _find_picker(contexts, sels, label):
-        """Search page then frame for the first visible picker input.
-        Page is searched first because the Settings section (including the
-        date/time picker) lives on the main page, not inside the upload iframe."""
-        for ctx in contexts:
+    def _find_picker(sels: tuple, label: str):
+        """Search page then frame for the first visible/scrollable picker element."""
+        for ctx in (page, frame):
             for sel in sels:
                 try:
                     el = ctx.locator(sel).first
-                    if el.is_visible(timeout=1_500):
+                    # Scroll into view inside the inner panel before visibility check
+                    try:
+                        el.scroll_into_view_if_needed(timeout=600)
+                    except Exception:
+                        pass
+                    if el.is_visible(timeout=1_200):
                         return el
                 except Exception:
                     continue
         return None
 
-    def _dump_inputs(contexts, ui_log, label):
-        """Log all visible inputs (type, placeholder, aria-label, class snippet)
-        so we know exactly what's available if a picker isn't found."""
-        entries = []
-        for ctx_name, ctx in contexts:
+    def _fill_picker(el, val_iso: str, val_slash: str, val_hhmm: str,
+                     val_ampm: str, label: str):
+        """Fill a date/time field.  Tries input fill, keyboard type, and
+        React-compatible event dispatch.  Works for both native inputs and
+        custom elements that become editable when focused."""
+        # Strategy A: native input fill
+        try:
+            el.click(click_count=3)
+            el.fill(val_iso)
+            el.dispatch_event("input")
+            el.dispatch_event("change")
+            time.sleep(0.3)
+            v = el.input_value()
+            if v and v not in ("", "undefined"):
+                return
+        except Exception:
+            pass
+        # Strategy B: keyboard type (works for custom editable divs)
+        try:
+            el.click(click_count=3)
+            el.press("Control+a")
+            for fmt in (val_slash, val_hhmm, val_ampm, val_iso):
+                if fmt:
+                    page.keyboard.type(fmt)
+                    page.keyboard.press("Tab")
+                    time.sleep(0.3)
+                    break
+        except Exception:
+            pass
+
+    def _handle_calendar_popup(target_dt):
+        """If a calendar popup appeared after clicking date trigger, navigate
+        to target month and click the target day."""
+        # Wait briefly for any calendar dialog to appear
+        time.sleep(0.8)
+        cal_sels = (
+            "[role='dialog'][class*='alendar' i]",
+            "[class*='Calendar']",
+            "[class*='calendar']",
+            "[role='dialog']",
+        )
+        cal = None
+        for sel in cal_sels:
             try:
-                for el in ctx.locator("input").all()[:30]:
-                    try:
-                        if not el.is_visible(timeout=150):
-                            continue
-                        attrs = {
-                            a: (el.get_attribute(a) or "")[:60]
-                            for a in ("type", "placeholder", "aria-label", "class")
-                            if el.get_attribute(a)
-                        }
-                        entries.append(f"{ctx_name}: {attrs}")
-                    except Exception:
-                        pass
+                el = page.locator(sel).first
+                if el.is_visible(timeout=800):
+                    cal = el
+                    break
             except Exception:
-                pass
-        msg = f"TikTok [{label}] visible inputs: {entries or '(none)'}"
-        log.info(msg)   # goes to app.log
-        ui_log(msg)     # goes to Gradio UI
+                continue
 
-    _contexts = [(page, "page"), (frame, "frame")]  # page first — form is on main page
+        if cal is None:
+            return False  # no calendar appeared
 
-    date_input = _find_picker([page, frame], _DATE_SELS, "date")
-    if date_input is None:
+        target_month = target_dt.strftime("%B %Y")
+        for _ in range(24):
+            try:
+                header_txt = page.evaluate("""() => {
+                    const h = document.querySelector(
+                        '[class*="Calendar"] [class*="month" i], '
+                        '[class*="Calendar"] [class*="header" i], '
+                        '[role="dialog"] [class*="month" i]'
+                    );
+                    return h ? h.textContent.trim() : '';
+                }""")
+                if target_month.lower() in header_txt.lower():
+                    break
+                # Click "next month"
+                for ns in ("button[aria-label*='next' i]",
+                           "button[class*='next' i]", "button[class*='Next']",
+                           "[class*='forward']", "[class*='rightArrow']"):
+                    try:
+                        nb = page.locator(ns).last
+                        if nb.is_visible(timeout=400):
+                            nb.click()
+                            time.sleep(0.4)
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                break
+
+        # Click the target day
+        day = str(target_dt.day)
+        for ds in (
+            f"[data-date='{target_dt.strftime('%Y-%m-%d')}']",
+            f"button[aria-label*='{target_dt.strftime('%B')} {day}' i]",
+            f"[class*='day']:has-text('{day}'):not([class*='disabled' i]):not([class*='other' i])",
+            f"td:has-text('{day}'):not([class*='disabled' i])",
+            f"button:has-text('{day}'):not([disabled])",
+        ):
+            try:
+                db = page.locator(ds).first
+                if db.is_visible(timeout=500):
+                    db.click()
+                    time.sleep(0.3)
+                    return True
+            except Exception:
+                continue
+        return False
+
+    # ── Set date ──────────────────────────────────────────────────────────────
+    date_el = _find_picker(_DATE_SELS, "date")
+    if date_el is None:
         _screenshot_on_fail(page, "date_picker_missing")
-        _dump_inputs(_contexts, ui_log, "date_picker_missing")
+        _dump_schedule_dom("date_picker_missing")
         raise RuntimeError(
             "TikTok date picker not found after enabling schedule toggle. "
-            "Check temp/fail_date_picker_missing_*.png and the log for "
-            "the full list of visible inputs."
+            "Check temp/fail_date_picker_missing_*.png; "
+            "DOM elements logged to app.log."
         )
 
-    try:
-        date_input.click(click_count=3)
-        date_input.fill(schedule_dt.strftime("%Y-%m-%d"))
-        date_input.dispatch_event("input")
-        date_input.dispatch_event("change")
-        time.sleep(0.3)
-        current_val = date_input.input_value()
-        if not current_val or current_val in ("", "undefined"):
-            date_input.click(click_count=3)
-            date_input.type(schedule_dt.strftime("%m/%d/%Y"))
-            date_input.dispatch_event("input")
-            date_input.dispatch_event("change")
-        date_input.press("Tab")
-        time.sleep(0.5)
-    except Exception as exc:
-        _screenshot_on_fail(page, "date_picker_fill_error")
-        raise RuntimeError(f"TikTok date picker fill failed: {exc}") from exc
+    _safe_click(page, date_el, ui_log, "date_trigger")
+    if not _handle_calendar_popup(schedule_dt):
+        # No calendar appeared — try direct fill (might be an input or editable)
+        _fill_picker(date_el,
+                     schedule_dt.strftime("%Y-%m-%d"),
+                     schedule_dt.strftime("%m/%d/%Y"),
+                     "", "", "date")
+    time.sleep(0.5)
 
-    time_input = _find_picker([page, frame], _TIME_SELS, "time")
-    if time_input is None:
+    # ── Set time ──────────────────────────────────────────────────────────────
+    time_el = _find_picker(_TIME_SELS, "time")
+    if time_el is None:
         _screenshot_on_fail(page, "time_picker_missing")
-        _dump_inputs(_contexts, ui_log, "time_picker_missing")
+        _dump_schedule_dom("time_picker_missing")
         raise RuntimeError(
-            "TikTok time picker not found after enabling schedule toggle. "
-            "Check temp/fail_time_picker_missing_*.png and the log for "
-            "the full list of visible inputs."
+            "TikTok time picker not found after setting date. "
+            "Check temp/fail_time_picker_missing_*.png; "
+            "DOM elements logged to app.log."
         )
 
-    try:
-        time_input.click(click_count=3)
-        time_input.fill(schedule_dt.strftime("%H:%M"))
-        time_input.dispatch_event("input")
-        time_input.dispatch_event("change")
-        time.sleep(0.3)
-        current_val = time_input.input_value()
-        if not current_val or current_val in ("", "undefined"):
-            time_input.click(click_count=3)
-            time_input.type(schedule_dt.strftime("%I:%M %p"))
-            time_input.dispatch_event("input")
-            time_input.dispatch_event("change")
-        time_input.press("Tab")
-        time.sleep(0.5)
-    except Exception as exc:
-        _screenshot_on_fail(page, "time_picker_fill_error")
-        raise RuntimeError(f"TikTok time picker fill failed: {exc}") from exc
+    _safe_click(page, time_el, ui_log, "time_trigger")
+    time.sleep(0.6)
+    # Time might open a dropdown list — try clicking the matching option first
+    _h = schedule_dt.strftime("%I").lstrip("0") or "12"
+    _ampm = schedule_dt.strftime("%p")  # AM / PM
+    _hhmm_24 = schedule_dt.strftime("%H:%M")
+    _hhmm_12 = schedule_dt.strftime("%I:%M %p")
+    _time_option_clicked = False
+    for ts in (
+        f"[role='option']:has-text('{_hhmm_12}')",
+        f"li:has-text('{_hhmm_12}')",
+        f"[role='option']:has-text('{_h}:00 {_ampm}')",
+        f"li:has-text('{_h}:00 {_ampm}')",
+        f"[role='option']:has-text('{_hhmm_24}')",
+        f"li:has-text('{_hhmm_24}')",
+    ):
+        try:
+            opt = page.locator(ts).first
+            if opt.is_visible(timeout=600):
+                opt.click()
+                _time_option_clicked = True
+                time.sleep(0.3)
+                break
+        except Exception:
+            continue
+
+    if not _time_option_clicked:
+        _fill_picker(time_el, _hhmm_24, "", _hhmm_24, _hhmm_12, "time")
+    time.sleep(0.5)
+
+    # ── Validate schedule time is sufficiently in the future ──────────────────
+    # TikTok rejects schedules less than 15-20 min from now.
+    from datetime import timezone as _tz
+    _now = datetime.now()
+    _delta_min = (schedule_dt.replace(tzinfo=None) - _now).total_seconds() / 60
+    if _delta_min < 18:
+        ui_log(f"TikTok WARNING: schedule_dt is only {_delta_min:.0f} min from now "
+               f"— TikTok requires ≥20 min. This may be rejected.")
 
     # ── Submit ────────────────────────────────────────────────────────────────
-    # Only look for a Schedule/Submit button — NOT "Post", to avoid accidentally
-    # publishing immediately if the schedule toggle failed to activate.
-    post_btn = frame.locator(
-        "button:has-text('Schedule'), button:has-text('Submit')"
-    ).last
-    try:
-        post_btn.wait_for(state="visible", timeout=10_000)
-    except Exception:
+    # The submit button may say "Post" (normal publish) OR "Schedule post".
+    # We ONLY click it if the schedule toggle was confirmed activated.
+    # Search page first, then frame; prefer buttons with "Schedule" in text.
+    post_btn = None
+    for ctx in (page, frame):
+        for btn_sel in (
+            "button:has-text('Schedule post')",
+            "button:has-text('Schedule')",
+            "button:has-text('Submit')",
+            "button:has-text('Post')",           # last resort — only safe after toggle verified
+        ):
+            try:
+                el = ctx.locator(btn_sel).last
+                if el.is_visible(timeout=1_500):
+                    post_btn = el
+                    break
+            except Exception:
+                continue
+        if post_btn:
+            break
+
+    if post_btn is None:
         _screenshot_on_fail(page, "submit_btn_missing")
+        _dump_schedule_dom("submit_btn_missing")
         raise RuntimeError(
-            "TikTok 'Schedule'/'Submit' button not found. "
+            "TikTok submit button not found. "
             "Check temp/fail_submit_btn_missing_*.png."
         )
     _safe_click(page, post_btn, ui_log, "post_button")
     time.sleep(3)
 
     # ── Confirm intermediate dialog (if any) ─────────────────────────────────
-    for _confirm_sel in ("button:has-text('Confirm')", "button:has-text('OK')"):
-        try:
-            btn = frame.locator(_confirm_sel).first
-            if btn.is_visible(timeout=1_500):
-                _safe_click(page, btn, ui_log, "confirm_button")
-                time.sleep(2)
-                break
-        except Exception:
-            pass
+    for _confirm_sel in (
+        "button:has-text('Confirm')",
+        "button:has-text('OK')",
+        "button:has-text('Done')",
+    ):
+        for _ctx in (page, frame):
+            try:
+                btn = _ctx.locator(_confirm_sel).first
+                if btn.is_visible(timeout=1_200):
+                    _safe_click(page, btn, ui_log, "confirm_button")
+                    time.sleep(2)
+                    break
+            except Exception:
+                pass
 
     # ── Verify success / surface errors ──────────────────────────────────────
-    # TikTok shows a green banner or navigates after successful scheduling.
-    # Catch validation errors (bad time, processing not done, etc.) so the
-    # log shows a useful message instead of silently thinking it succeeded.
-    _screenshot_on_fail(page, "after_schedule")  # always saved — post-submit state
+    _screenshot_on_fail(page, "after_schedule")
     time.sleep(1)
     _error_sels = (
         "div:has-text('Please set a valid')",
@@ -883,15 +1084,16 @@ def _tiktok_upload(page, mp4_path: str, caption: str, schedule_dt: datetime, ui_
         "[class*='error']:has-text('time')",
     )
     for sel in _error_sels:
-        try:
-            el = frame.locator(sel).first
-            if el.is_visible(timeout=500):
-                msg = el.inner_text(timeout=500).strip()[:200]
-                _screenshot_on_fail(page, "schedule_validation_error")
-                raise RuntimeError(f"TikTok scheduling validation error: {msg!r}")
-        except RuntimeError:
-            raise
-        except Exception:
-            continue
+        for _ctx in (page, frame):
+            try:
+                el = _ctx.locator(sel).first
+                if el.is_visible(timeout=400):
+                    msg = el.inner_text(timeout=400).strip()[:200]
+                    _screenshot_on_fail(page, "schedule_validation_error")
+                    raise RuntimeError(f"TikTok scheduling validation error: {msg!r}")
+            except RuntimeError:
+                raise
+            except Exception:
+                continue
 
     ui_log("TikTok: post scheduled.")
