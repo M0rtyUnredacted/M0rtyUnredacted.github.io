@@ -13,6 +13,11 @@
     "poll_interval_minutes": 10
   },
 
+  "youtube_monetizer": {
+    "_youtube_help": "interval_hours = how often the app auto-monetizes YouTube videos (recommended 5 hours)",
+    "interval_hours": 5
+  },
+
   "notifications": {
     "_notifications_help": "Set notify_on_failure to false to disable email alerts. gmail_app_password is a 16-char app-specific password (not your main Gmail password).",
     "email": "your-email@gmail.com",

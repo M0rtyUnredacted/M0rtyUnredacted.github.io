@@ -144,10 +144,16 @@ def main():
     poll_minutes = config.get("tiktok", {}).get("poll_interval_minutes", 10)
     schedule.every(poll_minutes).minutes.do(tiktok_job)
 
-    ui_module.ui_log(f"Scheduler started — TikTok check every {poll_minutes} min.")
+    youtube_monetizer_hours = config.get("youtube_monetizer", {}).get("interval_hours", 5)
+    schedule.every(youtube_monetizer_hours).hours.do(lambda: youtube_job(test_mode=False))
 
-    ui_module.ui_log("Running initial check ...")
+    ui_module.ui_log(f"Scheduler started — TikTok check every {poll_minutes} min, YouTube check every {youtube_monetizer_hours} hours.")
+
+    ui_module.ui_log("Running initial TikTok check ...")
     tiktok_job()
+
+    ui_module.ui_log("Running initial YouTube check (full run) ...")
+    youtube_job(test_mode=False)
 
     def _shutdown(sig, frame):
         ui_module.ui_log("Shutting down ...")
