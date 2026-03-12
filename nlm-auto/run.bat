@@ -17,7 +17,20 @@ if not exist "%APP_DIR%" (
 cd /d "%APP_DIR%"
 
 :: -----------------------------------------------------------------
-:: 2. Seed config.json on first run
+:: 2. Pull latest code from git
+:: -----------------------------------------------------------------
+echo Checking for updates from git ...
+git pull origin claude/onboarding-guide-NyGwx 2>nul
+if errorlevel 1 (
+    echo WARNING: git pull failed or git not in PATH. Continuing with local code.
+    echo Make sure you're on the correct branch and have git installed.
+) else (
+    echo Updates applied.
+)
+echo.
+
+:: -----------------------------------------------------------------
+:: 3. Seed config.json on first run
 :: -----------------------------------------------------------------
 if not exist "config.json" (
     copy config_template.json config.json >nul
@@ -35,7 +48,7 @@ if not exist "config.json" (
 )
 
 :: -----------------------------------------------------------------
-:: 3. Check credentials.json
+:: 4. Check credentials.json
 :: -----------------------------------------------------------------
 if not exist "credentials.json" (
     echo ERROR: credentials.json not found in %APP_DIR%\
@@ -44,7 +57,7 @@ if not exist "credentials.json" (
 )
 
 :: -----------------------------------------------------------------
-:: 4. Install Python dependencies (if not already done)
+:: 5. Install Python dependencies (if not already done)
 :: -----------------------------------------------------------------
 if not exist "%APP_DIR%\.deps_installed" (
     echo Installing dependencies -- this only runs once ...
@@ -61,7 +74,7 @@ if not exist "%APP_DIR%\.deps_installed" (
 )
 
 :: -----------------------------------------------------------------
-:: 5. Chrome remote-debugging session
+:: 6. Chrome remote-debugging session
 ::
 :: If port 9222 is already open, reuse it.
 :: If not, kill any stale Chrome processes then launch fresh with
@@ -127,7 +140,7 @@ if errorlevel 1 (
 :chrome_ready
 
 :: -----------------------------------------------------------------
-:: 6. Launch app
+:: 7. Launch app
 :: -----------------------------------------------------------------
 echo.
 echo Starting TikTok Automation App ...
