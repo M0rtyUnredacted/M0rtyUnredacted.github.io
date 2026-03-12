@@ -9,6 +9,8 @@ import gradio as gr
 import db
 
 _run_now_fn: Callable | None = None
+_youtube_job_fn: Callable | None = None
+_youtube_full_run: bool = False
 
 _log_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
@@ -79,6 +81,22 @@ def _reset_all_videos() -> str:
     return msg
 
 
+def _monetize_youtube(full_run: bool) -> str:
+    if _youtube_job_fn is None:
+        return "YouTube Monetizer callback not registered."
+    # Pass full_run flag to the job function
+    t = threading.Thread(target=lambda: _youtube_job_fn(full_run), daemon=True)
+    t.start()
+    mode = "full run" if full_run else "test mode (1 video)"
+    return f"YouTube Monetizer triggered ({mode}) — check log for progress."
+
+
+def _toggle_youtube_full_run(value: bool) -> bool:
+    global _youtube_full_run
+    _youtube_full_run = value
+    return value
+
+
 def build_ui() -> gr.Blocks:
     with gr.Blocks(title="TikTok Auto — M0rty Unredacted", theme=gr.themes.Soft()) as demo:
         gr.Markdown("## TikTok Automation App — M0rty Unredacted\nDrive → TikTok Studio scheduler")
@@ -117,13 +135,38 @@ def build_ui() -> gr.Blocks:
             "_**Reset Failed Videos** unblocks videos stuck as 'failed' so they retry on the next poll._"
         )
 
+        gr.Markdown("---")
+        gr.Markdown("### YouTube Monetizer — bulk-enable monetization")
+
+        with gr.Row():
+            youtube_full_run_toggle = gr.Checkbox(
+                label="Full run (all videos)",
+                value=_youtube_full_run,
+                interactive=True,
+            )
+            monetize_btn = gr.Button("💰 Monetize All", variant="secondary")
+            youtube_action_out = gr.Textbox(label="", interactive=False, scale=3)
+
+        youtube_full_run_toggle.change(_toggle_youtube_full_run, inputs=youtube_full_run_toggle, outputs=youtube_full_run_toggle)
+        monetize_btn.click(
+            lambda: _monetize_youtube(_youtube_full_run),
+            outputs=youtube_action_out
+        )
+
+        gr.Markdown(
+            "_**💰 Monetize All** (test mode) processes 1 video to test._  \n"
+            "_Enable **Full run** to process all videos in your channel._  \n"
+            "_Reuses the same Chrome session as TikTok Scheduler._"
+        )
+
     return demo
 
 
-def launch(share: bool = False, run_now_fn: Callable | None = None) -> None:
+def launch(share: bool = False, run_now_fn: Callable | None = None, youtube_job_fn: Callable | None = None) -> None:
     """Launch Gradio in a daemon thread so it doesn't block the main loop."""
-    global _run_now_fn
+    global _run_now_fn, _youtube_job_fn
     _run_now_fn = run_now_fn
+    _youtube_job_fn = youtube_job_fn
     demo = build_ui()
 
     def _run():

@@ -13,6 +13,7 @@ import schedule
 import chrome_client
 import mailer
 import tiktok_scheduler
+import youtube_monetizer
 import ui as ui_module
 
 # ── Logging setup ─────────────────────────────────────────────────────────────
@@ -110,6 +111,24 @@ def make_tiktok_job():
     return job
 
 
+def make_youtube_job():
+    """Return a job function for YouTube Monetizer.
+
+    The returned function accepts a test_mode parameter.
+    """
+    def job(test_mode: bool = False):
+        mode_label = "test mode" if test_mode else "full run"
+        ui_module.ui_log(f"YouTube Monetizer: starting ({mode_label}) ...")
+        try:
+            youtube_monetizer.run_monetizer(test_mode=test_mode, ui_log=ui_module.ui_log)
+        except Exception as exc:
+            log.exception("YouTube Monetizer error")
+            ui_module.ui_log(f"YouTube Monetizer ERROR: {exc}")
+        finally:
+            _write_recent_log()
+    return job
+
+
 def main():
     log.info("TikTok Automation App starting ...")
     log.info("Log file: %s", LOG_PATH)
@@ -118,7 +137,8 @@ def main():
     log.info("Config loaded.")
 
     tiktok_job = make_tiktok_job()
-    ui_module.launch(run_now_fn=tiktok_job)
+    youtube_job = make_youtube_job()
+    ui_module.launch(run_now_fn=tiktok_job, youtube_job_fn=youtube_job)
     time.sleep(2)
 
     poll_minutes = config.get("tiktok", {}).get("poll_interval_minutes", 10)
