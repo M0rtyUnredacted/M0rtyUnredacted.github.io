@@ -110,60 +110,29 @@ copy C:\nlm_app\config_template.json C:\nlm_app\config.json
 notepad C:\nlm_app\config.json
 ```
 
-Fill in every value:
+Fill in every value marked `FILL_IN` or `paste-your-...`:
 
 ```json
 {
   "google_drive": {
-    "query_docs_folder_id":  "paste-your-query-docs-folder-id-here",
-    "tiktok_ready_folder_id":  "1Y_gjrY3fryXLiI6011AuufpAlUDz7wc7",
-    "tiktok_posted_folder_id": "1Jcwza0dMUSgJfslNbg627GvWvLYph99c",
-    "poll_interval_minutes": 15
-  },
-
-  "notebooklm": {
-    "notebook_url": "https://notebooklm.google.com/notebook/YOUR-NOTEBOOK-ID",
-    "chrome_profile_path": "C:\\Users\\YourName\\AppData\\Local\\Google\\Chrome\\User Data\\Default",
-    "style_doc_id": ""
+    "tiktok_ready_folder_id":  "paste-your-tiktok-ready-folder-id-here",
+    "tiktok_posted_folder_id": "paste-your-tiktok-posted-folder-id-here"
   },
 
   "tiktok": {
     "post_interval_hours": 5,
-    "chrome_profile_path": "C:\\Users\\YourName\\AppData\\Local\\Google\\Chrome\\User Data\\Default"
+    "poll_interval_minutes": 10
   },
 
   "notifications": {
     "email": "you@gmail.com",
     "notify_on_failure": true,
     "gmail_app_password": "xxxx xxxx xxxx xxxx"
-  },
-
-  "daily_quota": {
-    "max_nlm_videos_per_day": 6
   }
 }
 ```
 
-### How to find your `chrome_profile_path`
-
-This is the most common setup mistake. Follow these steps exactly:
-
-1. Press **Win + R**, type the following, and press Enter:
-   ```
-   %LOCALAPPDATA%\Google\Chrome\User Data
-   ```
-2. Windows Explorer opens. You will see folders like `Default`, `Profile 1`, `Profile 2`, etc.
-3. Your active Chrome profile folder is usually `Default` (if you have only one Chrome profile) or `Profile 1` (if you added extra profiles).
-4. The full path to use is:
-   ```
-   C:\Users\YourName\AppData\Local\Google\Chrome\User Data\Default
-   ```
-   Replace `YourName` with your actual Windows username, and `Default` with whichever profile folder is yours.
-5. Paste this path as the value for **both** `notebooklm.chrome_profile_path` **and** `tiktok.chrome_profile_path`.
-
-> **Tip:** To confirm your username, open Command Prompt and type `echo %USERNAME%`.
-
-> **Note:** Use double backslashes `\\` inside the JSON string (e.g., `C:\\Users\\marka\\...`).
+**Chrome Profile:** The app uses a dedicated debug profile (`C:\nlm_app\chrome_debug`) so it never conflicts with your personal Chrome browsing. No manual configuration needed—just run `run.bat`.
 
 ---
 
@@ -182,12 +151,12 @@ Expected output:
 Dependencies already installed.
 Checking Chrome debug port 9222 ...
 Port 9222 not responding -- launching Chrome ...
-  User data: C:\Users\marka\AppData\Local\Google\Chrome\User Data
+  User data: C:\nlm_app\chrome_debug
   Profile  : Default
 Waiting for Chrome to bind port 9222 ...
 Chrome ready on port 9222.
 
-Starting NLM Automation App ...
+Starting TikTok Automation App ...
 Gradio UI -> http://localhost:7860
 ```
 
@@ -196,10 +165,6 @@ Open [http://localhost:7860](http://localhost:7860) in your browser to see the l
 ---
 
 ## Troubleshooting
-
-### `User data: Default` / `The system cannot find the drive specified.`
-
-Your `chrome_profile_path` is empty or invalid in `config.json`. Follow Step 6 above to find and set the correct path.
 
 ### `Chrome did not bind port 9222 after 14 seconds`
 

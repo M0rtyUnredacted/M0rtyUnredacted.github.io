@@ -1,18 +1,21 @@
 {
-  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for details.",
+  "_comment": "Copy this file to config.json and fill in every value marked FILL_IN. See SETUP.md for step-by-step instructions.",
 
   "google_drive": {
-    "tiktok_ready_folder_id":  "1Y_gjrY3fryXLiI6011AuufpAlUDz7wc7",
-    "tiktok_posted_folder_id": "1Jcwza0dMUSgJfslNbg627GvWvLYph99c"
+    "_google_drive_help": "Go to drive.google.com, create folders, open each folder, and copy the folder ID from the URL (the long string after /folders/)",
+    "tiktok_ready_folder_id":  "FILL_IN_WITH_YOUR_TIKTOK_READY_FOLDER_ID",
+    "tiktok_posted_folder_id": "FILL_IN_WITH_YOUR_TIKTOK_POSTED_FOLDER_ID"
   },
 
   "tiktok": {
+    "_tiktok_help": "post_interval_hours = minimum hours between consecutive TikTok posts; poll_interval_minutes = how often the app checks for new videos",
     "post_interval_hours": 5,
     "poll_interval_minutes": 10
   },
 
   "notifications": {
-    "email": "you@gmail.com",
+    "_notifications_help": "Set notify_on_failure to false to disable email alerts. gmail_app_password is a 16-char app-specific password (not your main Gmail password).",
+    "email": "your-email@gmail.com",
     "notify_on_failure": true,
     "gmail_app_password": "xxxx xxxx xxxx xxxx"
   }
