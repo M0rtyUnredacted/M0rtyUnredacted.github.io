@@ -172,9 +172,23 @@ def main():
     # Unified 5-hour cycle: TikTok → NLM → YouTube (sequential)
     def full_cycle_job():
         ui_module.ui_log("=== 5-hour cycle starting ===")
-        tiktok_job()
-        nlm_job()
-        youtube_job(test_mode=False)
+        states = ui_module.get_automation_states()
+
+        if states["tiktok"]:
+            tiktok_job()
+        else:
+            ui_module.ui_log("TikTok skipped (disabled in UI)")
+
+        if states["nlm"]:
+            nlm_job()
+        else:
+            ui_module.ui_log("NLM skipped (disabled in UI)")
+
+        if states["youtube"]:
+            youtube_job(test_mode=False)
+        else:
+            ui_module.ui_log("YouTube Monetizer skipped (disabled in UI)")
+
         ui_module.ui_log("=== 5-hour cycle complete, sleeping until next cycle ===")
 
     cycle_hours = config.get("cycle", {}).get("interval_hours", 5)

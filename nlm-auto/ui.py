@@ -12,6 +12,11 @@ _run_now_fn: Callable | None = None
 _youtube_job_fn: Callable | None = None
 _youtube_full_run: bool = False
 
+# Automation toggles for cycle control
+_enable_tiktok: bool = True
+_enable_nlm: bool = True
+_enable_youtube: bool = True
+
 _log_queue: queue.Queue = queue.Queue()
 _log_lines: list[str] = []
 _MAX_LINES = 500
@@ -91,10 +96,37 @@ def _monetize_youtube(full_run: bool) -> str:
     return f"YouTube Monetizer triggered ({mode}) — check log for progress."
 
 
+def _toggle_tiktok(value: bool) -> bool:
+    global _enable_tiktok
+    _enable_tiktok = value
+    return value
+
+
+def _toggle_nlm(value: bool) -> bool:
+    global _enable_nlm
+    _enable_nlm = value
+    return value
+
+
+def _toggle_youtube(value: bool) -> bool:
+    global _enable_youtube
+    _enable_youtube = value
+    return value
+
+
 def _toggle_youtube_full_run(value: bool) -> bool:
     global _youtube_full_run
     _youtube_full_run = value
     return value
+
+
+def get_automation_states() -> dict:
+    """Return current state of all automations (used by main.py)."""
+    return {
+        "tiktok": _enable_tiktok,
+        "nlm": _enable_nlm,
+        "youtube": _enable_youtube,
+    }
 
 
 def build_ui() -> gr.Blocks:
@@ -130,13 +162,42 @@ def build_ui() -> gr.Blocks:
         reset_all_btn.click(_reset_all_videos,   outputs=action_out)
 
         gr.Markdown(
-            "_TikTok Scheduler polls Drive every 10 min and auto-schedules new videos._  \n"
-            "_**▶ Run Now** triggers an immediate poll (reloads config.json — no restart needed after changing folder ID)._  \n"
-            "_**Reset Failed Videos** unblocks videos stuck as 'failed' so they retry on the next poll._"
+            "_**5-hour cycle** runs TikTok → NLM → YouTube sequentially._  \n"
+            "_**▶ Run Now** triggers the full cycle immediately._  \n"
+            "_**Reset Failed Videos** unblocks videos stuck as 'failed' so they retry on the next cycle._"
         )
 
         gr.Markdown("---")
-        gr.Markdown("### YouTube Monetizer — bulk-enable monetization")
+        gr.Markdown("### Cycle Automation Controls")
+
+        with gr.Row():
+            tiktok_toggle = gr.Checkbox(
+                label="Enable TikTok",
+                value=_enable_tiktok,
+                interactive=True,
+            )
+            nlm_toggle = gr.Checkbox(
+                label="Enable NLM",
+                value=_enable_nlm,
+                interactive=True,
+            )
+            youtube_toggle = gr.Checkbox(
+                label="Enable YouTube Monetizer",
+                value=_enable_youtube,
+                interactive=True,
+            )
+
+        tiktok_toggle.change(_toggle_tiktok, inputs=tiktok_toggle, outputs=tiktok_toggle)
+        nlm_toggle.change(_toggle_nlm, inputs=nlm_toggle, outputs=nlm_toggle)
+        youtube_toggle.change(_toggle_youtube, inputs=youtube_toggle, outputs=youtube_toggle)
+
+        gr.Markdown(
+            "_Disable automations here to skip them in the next 5-hour cycle._  \n"
+            "_TikTok prepares videos; NLM generates them; YouTube monetizes them._"
+        )
+
+        gr.Markdown("---")
+        gr.Markdown("### YouTube Monetizer — manual test")
 
         with gr.Row():
             youtube_full_run_toggle = gr.Checkbox(
