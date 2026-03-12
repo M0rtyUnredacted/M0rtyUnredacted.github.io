@@ -12,6 +12,7 @@ import schedule
 
 import chrome_client
 import mailer
+import nlm_watcher
 import tiktok_scheduler
 import youtube_monetizer
 import ui as ui_module
@@ -111,6 +112,32 @@ def make_tiktok_job():
     return job
 
 
+def make_nlm_job():
+    """Return a job function that runs NLM Watcher.
+
+    Reloading config on each invocation means changing config values
+    takes effect on the very next run — no restart required.
+    """
+    def job():
+        ui_module.ui_log("NLM Watcher: running ...")
+        try:
+            config = load_config()
+        except SystemExit as exc:
+            ui_module.ui_log(f"NLM ERROR: config problem — {exc}")
+            log.error("Config reload failed: %s", exc)
+            _write_recent_log()
+            return
+        try:
+            nlm_watcher.run(config, ui_module.ui_log)
+        except Exception as exc:
+            log.exception("NLM Watcher error")
+            ui_module.ui_log(f"NLM ERROR: {exc}")
+            mailer.send_failure(config, "NLM Watcher", exc)
+        finally:
+            _write_recent_log()
+    return job
+
+
 def make_youtube_job():
     """Return a job function for YouTube Monetizer.
 
@@ -137,23 +164,26 @@ def main():
     log.info("Config loaded.")
 
     tiktok_job = make_tiktok_job()
+    nlm_job = make_nlm_job()
     youtube_job = make_youtube_job()
     ui_module.launch(run_now_fn=tiktok_job, youtube_job_fn=youtube_job)
     time.sleep(2)
 
-    poll_minutes = config.get("tiktok", {}).get("poll_interval_minutes", 10)
-    schedule.every(poll_minutes).minutes.do(tiktok_job)
+    # Unified 5-hour cycle: TikTok → NLM → YouTube (sequential)
+    def full_cycle_job():
+        ui_module.ui_log("=== 5-hour cycle starting ===")
+        tiktok_job()
+        nlm_job()
+        youtube_job(test_mode=False)
+        ui_module.ui_log("=== 5-hour cycle complete, sleeping until next cycle ===")
 
-    youtube_monetizer_hours = config.get("youtube_monetizer", {}).get("interval_hours", 5)
-    schedule.every(youtube_monetizer_hours).hours.do(lambda: youtube_job(test_mode=False))
+    cycle_hours = config.get("cycle", {}).get("interval_hours", 5)
+    schedule.every(cycle_hours).hours.do(full_cycle_job)
 
-    ui_module.ui_log(f"Scheduler started — TikTok check every {poll_minutes} min, YouTube check every {youtube_monetizer_hours} hours.")
+    ui_module.ui_log(f"Scheduler started — full cycle every {cycle_hours} hours (TikTok → NLM → YouTube).")
 
-    ui_module.ui_log("Running initial TikTok check ...")
-    tiktok_job()
-
-    ui_module.ui_log("Running initial YouTube check (full run) ...")
-    youtube_job(test_mode=False)
+    ui_module.ui_log("Running initial 5-hour cycle ...")
+    full_cycle_job()
 
     def _shutdown(sig, frame):
         ui_module.ui_log("Shutting down ...")

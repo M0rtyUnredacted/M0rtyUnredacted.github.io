@@ -8,13 +8,12 @@
   },
 
   "tiktok": {
-    "_tiktok_help": "post_interval_hours = minimum hours between consecutive TikTok posts; poll_interval_minutes = how often the app checks for new videos",
-    "post_interval_hours": 5,
-    "poll_interval_minutes": 10
+    "_tiktok_help": "post_interval_hours = minimum hours between consecutive TikTok posts",
+    "post_interval_hours": 5
   },
 
-  "youtube_monetizer": {
-    "_youtube_help": "interval_hours = how often the app auto-monetizes YouTube videos (recommended 5 hours)",
+  "cycle": {
+    "_cycle_help": "interval_hours = how often the full 5-hour cycle runs (TikTok → NLM → YouTube sequentially)",
     "interval_hours": 5
   },
 
