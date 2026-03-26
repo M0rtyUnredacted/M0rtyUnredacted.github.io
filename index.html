@@ -29,6 +29,9 @@
       --cyan: #00e5ff;
       --cyan-glow: rgba(0,229,255,0.15);
       --cyan-dim: rgba(0,229,255,0.08);
+      --gold: #f5a623;
+      --gold-glow: rgba(245,166,35,0.2);
+      --gold-dim: rgba(245,166,35,0.10);
       --text: #e8e8f0;
       --muted: #666680;
       --subtle: #9999b0;
@@ -91,6 +94,41 @@
     .btn-reading { background: #100808; border: 1px solid #3a1010; color: #cc6666; }
     .btn-reading:hover { background: var(--crimson-dim); border-color: var(--crimson); color: #ff7070; box-shadow: 0 6px 24px var(--crimson-glow); }
 
+    .btn-taco {
+      background: #0f0d00;
+      border: 1px solid rgba(245,166,35,0.45);
+      color: var(--gold);
+    }
+    .btn-taco:hover {
+      background: var(--gold-dim);
+      border-color: var(--gold);
+      color: #ffc144;
+      box-shadow: 0 6px 24px var(--gold-glow);
+    }
+
+    .live-badge {
+      font-size: 0.52rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      background: rgba(204,26,26,0.25);
+      color: #ff6b6b;
+      border: 1px solid rgba(204,26,26,0.35);
+      border-radius: 3px;
+      padding: 2px 5px;
+      vertical-align: middle;
+      line-height: 1;
+    }
+
+    .btn-sub {
+      font-size: 0.7rem;
+      font-weight: 400;
+      color: rgba(245,166,35,0.55);
+      margin-top: 2px;
+      display: block;
+      letter-spacing: 0;
+    }
+
     .social-row { display: flex; gap: 8px; width: 100%; max-width: 380px; margin-bottom: 24px; }
     .btn-social {
       flex: 1; justify-content: center; padding: 11px 8px;
@@ -135,32 +173,42 @@
   <p class="section-label">Watch</p>
   <div class="link-group">
     <a class="btn btn-primary" href="https://www.youtube.com/@m0rtyunredacted" target="_blank" rel="noopener">
-      <span class="label">▶  YouTube</span>
-      <span class="arrow">›</span>
+      <span class="label">&#9654;&#xFE0E;&nbsp; YouTube</span>
+      <span class="arrow">&#x203A;</span>
     </a>
   </div>
 
   <p class="section-label">Follow</p>
   <div class="social-row">
-    <a class="btn-social" href="https://www.tiktok.com/@m0rtyunredacted" target="_blank" rel="noopener">▷ TikTok</a>
+    <a class="btn-social" href="https://www.tiktok.com/@m0rtyunredacted" target="_blank" rel="noopener">&#9655; TikTok</a>
+  </div>
+
+  <p class="section-label">Intelligence</p>
+  <div class="link-group">
+    <a class="btn btn-taco" href="/taco/">
+      <span class="label">
+        <span>&#127790;&nbsp; TACO Tracker &nbsp;<span class="live-badge">LIVE</span></span>
+      </span>
+      <span class="arrow">&#x203A;</span>
+    </a>
   </div>
 
   <p class="section-label">Read</p>
   <div class="link-group">
     <a class="btn btn-reading" href="/reading.html">
-      <span class="label">📚  Recommended Reading</span>
-      <span class="arrow">›</span>
+      <span class="label">&#128218;&nbsp; Recommended Reading</span>
+      <span class="arrow">&#x203A;</span>
     </a>
     <a class="btn btn-reading" href="/blog/">
-      <span class="label">📝  Blog</span>
-      <span class="arrow">›</span>
+      <span class="label">&#128221;&nbsp; Blog</span>
+      <span class="arrow">&#x203A;</span>
     </a>
   </div>
 
   <footer>
-    <p>© 2026 M0rty Unredacted</p>
+    <p>&copy; 2026 M0rty Unredacted</p>
     <p>Contains affiliate links. Qualifying purchases may generate a commission.</p>
-    <p><a href="/privacy.html">Privacy Policy</a>  ·  <a href="/terms.html">Terms of Service</a></p>
+    <p><a href="/privacy.html">Privacy Policy</a> &nbsp;&middot;&nbsp; <a href="/terms.html">Terms of Service</a></p>
   </footer>
 
 </body>
